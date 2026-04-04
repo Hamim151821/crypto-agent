@@ -1,0 +1,12 @@
+anthropic
+requests
+python-dotenv
+pandas
+ta
+openpyxl
+plyer
+schedule
+openai
+python-telegram-bot
+google-generativeai
+groq
