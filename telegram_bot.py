@@ -115,6 +115,10 @@ async def analisis_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             data_harga, berita, indikator
         )
 
+        # Simpan ke Google Sheets
+        from main import simpan_ke_sheets, simpan_ke_excel
+        simpan_ke_sheets(jenis, aset, data_harga, hasil, indikator)
+
         header = f"📊 *Analisis {aset.upper()}*\n\n"
         await kirim_pesan_panjang(update, header + hasil)
 
