@@ -295,8 +295,16 @@ def analisis_ai(pertanyaan, data_harga, berita, indikator):
 # ==============================
 def get_sheets_client():
     try:
+        import json
+        # Coba dari environment variable dulu
         creds_json = os.getenv("GOOGLE_CREDENTIALS")
-        creds_dict = json.loads(creds_json)
+        if creds_json:
+            creds_dict = json.loads(creds_json)
+        else:
+            # Fallback ke file credentials.json
+            with open("credentials.json", "r") as f:
+                creds_dict = json.load(f)
+                
         scopes = [
             "https://spreadsheets.google.com/feeds",
             "https://www.googleapis.com/auth/drive"
