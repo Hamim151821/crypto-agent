@@ -10,3 +10,5 @@ openai
 python-telegram-bot
 google-generativeai
 groq
+gspread
+google-auth

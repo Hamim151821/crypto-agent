@@ -10,6 +10,9 @@ from plyer import notification
 import schedule
 import time
 import threading
+import gspread
+from google.oauth2.service_account import Credentials
+import json
 
 # Load API key dari file .env
 load_dotenv()
@@ -288,6 +291,80 @@ def analisis_ai(pertanyaan, data_harga, berita, indikator):
 # ==============================
 
 # ==============================
+# FUNGSI GOOGLE SHEETS
+# ==============================
+def get_sheets_client():
+    try:
+        creds_json = os.getenv("GOOGLE_CREDENTIALS")
+        creds_dict = json.loads(creds_json)
+        scopes = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        client = gspread.authorize(creds)
+        return client
+    except Exception as e:
+        print(f"❌ Google Sheets error: {e}")
+        return None
+
+def simpan_ke_sheets(jenis, nama_aset, harga_data, analisis, indikator):
+    try:
+        client = get_sheets_client()
+        if not client:
+            return
+
+        sheet_id = os.getenv("GOOGLE_SHEETS_ID")
+        spreadsheet = client.open_by_key(sheet_id)
+
+        # Cek sheet Histori, kalau tidak ada buat baru
+        try:
+            ws = spreadsheet.worksheet("Histori")
+        except:
+            ws = spreadsheet.add_worksheet("Histori", 1000, 10)
+            ws.append_row([
+                "Tanggal & Waktu", "Jenis", "Nama Aset",
+                "Harga", "RSI", "MACD", "Sinyal AI", "Analisis"
+            ])
+
+        # Ambil data harga
+        try:
+            if jenis == "Crypto":
+                aset_key = list(harga_data.keys())[0]
+                harga = f"IDR {harga_data[aset_key].get('idr', '-'):,} | USD {harga_data[aset_key].get('usd', '-'):,}"
+            else:
+                harga = f"{harga_data.get('mata_uang', '')} {harga_data.get('harga', '-')}"
+        except:
+            harga = "-"
+
+        # Ambil indikator
+        rsi = indikator.get("rsi", "-") if indikator else "-"
+        macd = indikator.get("macd_status", "-") if indikator else "-"
+
+        # Tentukan sinyal
+        sinyal = "HOLD"
+        if "BELI" in analisis.upper():
+            sinyal = "BELI"
+        elif "JUAL" in analisis.upper():
+            sinyal = "JUAL"
+
+        # Tambah baris baru
+        ws.append_row([
+            datetime.now().strftime("%d/%m/%Y %H:%M"),
+            jenis,
+            nama_aset.upper(),
+            harga,
+            str(rsi),
+            macd,
+            sinyal,
+            analisis[:500]
+        ])
+        print(f"✅ Analisis tersimpan ke Google Sheets!")
+
+    except Exception as e:
+        print(f"⚠️ Gagal simpan ke Sheets: {e}")
+
+# ==============================
 # FUNGSI SIMPAN KE EXCEL
 # ==============================
 def simpan_ke_excel(jenis, nama_aset, harga_data, sinyal, analisis):
@@ -493,6 +570,7 @@ def main():
             print(hasil)
             print("-" * 55)
             simpan_ke_excel("Crypto", crypto, data_harga, "", hasil)
+            simpan_ke_sheets("Crypto", crypto, data_harga, hasil, indikator)
             
         elif pilihan == "2":
             print("\nContoh saham Indonesia: BBCA.JK, GOTO.JK, TLKM.JK, BBRI.JK")
@@ -533,6 +611,7 @@ def main():
                 print(hasil)
                 print("-" * 55)
                 simpan_ke_excel("Saham", saham, data_harga, "", hasil)
+                simpan_ke_sheets("Saham", saham, data_harga, hasil, indikator)
             except Exception as e:
                 if "403" in str(e) or "PermissionDenied" in str(type(e).__name__):
                     print(f"❌ Groq API error - coba lagi atau gunakan VPN!")
