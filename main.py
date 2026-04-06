@@ -266,15 +266,21 @@ def analisis_ai(pertanyaan, data_harga, berita, indikator):
     {berita}
     
     Pertanyaan pengguna: {pertanyaan}
-    
+
     Berikan analisis yang:
     1. Jelas dan mudah dipahami pemula
     2. Jelaskan kondisi RSI dan MACD dengan bahasa sederhana
     3. Hubungkan berita terkini dengan indikator teknikal
     4. Sertakan sinyal: BELI / JUAL / HOLD
     5. Sentimen pasar: POSITIF / NEGATIF / NETRAL
-    6. Jelaskan alasannya secara singkat
-    7. Ingatkan bahwa investasi selalu ada risikonya
+    6. Berikan rekomendasi trading:
+       - Entry Price: harga ideal untuk masuk posisi
+       - Stop Loss: batas harga keluar jika salah (sekitar 3-5% dari entry)
+       - Take Profit: target harga ambil untung (sekitar 5-10% dari entry)
+       - Risk Level: LOW / MEDIUM / HIGH
+       - Risk/Reward Ratio: perbandingan risiko vs potensi untung
+    7. Jelaskan alasannya secara singkat
+    8. Ingatkan bahwa investasi selalu ada risikonya
     
     Jawab dalam Bahasa Indonesia.
     """
