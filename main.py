@@ -292,6 +292,44 @@ def analisis_ai(pertanyaan, data_harga, berita, indikator):
     )
     return response.choices[0].message.content
 
+def parse_trading_info(hasil_analisis, harga_sekarang):
+    """Ekstrak Entry, SL, TP dari teks analisis AI"""
+    import re
+    
+    entry = harga_sekarang
+    sl = harga_sekarang * 0.95
+    tp = harga_sekarang * 1.10
+    sinyal = "HOLD"
+    
+    # Deteksi sinyal
+    if "BELI" in hasil_analisis.upper():
+        sinyal = "BELI"
+    elif "JUAL" in hasil_analisis.upper():
+        sinyal = "JUAL"
+    
+    # Cari angka setelah "Entry Price"
+    entry_match = re.search(r'Entry Price[:\s]+Rp?\s?([\d.,]+)', hasil_analisis)
+    sl_match = re.search(r'Stop Loss[:\s]+Rp?\s?([\d.,]+)', hasil_analisis)
+    tp_match = re.search(r'Take Profit[:\s]+Rp?\s?([\d.,]+)', hasil_analisis)
+    
+    if entry_match:
+        try:
+            entry = float(entry_match.group(1).replace(".", "").replace(",", ""))
+        except:
+            pass
+    if sl_match:
+        try:
+            sl = float(sl_match.group(1).replace(".", "").replace(",", ""))
+        except:
+            pass
+    if tp_match:
+        try:
+            tp = float(tp_match.group(1).replace(".", "").replace(",", ""))
+        except:
+            pass
+    
+    return sinyal, entry, sl, tp
+
 # ==============================
 # MENU UTAMA
 # ==============================
@@ -375,6 +413,156 @@ def simpan_ke_sheets(jenis, nama_aset, harga_data, analisis, indikator):
 
     except Exception as e:
         print(f"⚠️ Gagal simpan ke Sheets: {e}")
+
+# ==============================
+# FUNGSI PERFORMANCE TRACKING
+# ==============================
+def catat_sinyal(jenis, nama_aset, harga_entry, sinyal, stop_loss, take_profit):
+    try:
+        client = get_sheets_client()
+        if not client:
+            return
+
+        sheet_id = os.getenv("GOOGLE_SHEETS_ID")
+        spreadsheet = client.open_by_key(sheet_id)
+
+        # Cek sheet Performance, kalau tidak ada buat baru
+        try:
+            ws = spreadsheet.worksheet("Performance")
+        except:
+            ws = spreadsheet.add_worksheet("Performance", 1000, 15)
+            ws.append_row([
+                "Tanggal", "Jenis", "Aset", "Sinyal",
+                "Harga Entry", "Stop Loss", "Take Profit",
+                "Harga Penutupan", "Hasil", "Profit/Loss %",
+                "Status"
+            ])
+
+        ws.append_row([
+            datetime.now().strftime("%d/%m/%Y %H:%M"),
+            jenis,
+            nama_aset.upper(),
+            sinyal,
+            harga_entry,
+            stop_loss,
+            take_profit,
+            "-",      # Harga penutupan (diisi nanti)
+            "-",      # Hasil (WIN/LOSS)
+            "-",      # Profit/Loss %
+            "OPEN"    # Status (OPEN/CLOSED)
+        ])
+        print(f"✅ Sinyal dicatat ke Performance Tracker!")
+
+    except Exception as e:
+        print(f"⚠️ Gagal catat sinyal: {e}")
+
+def hitung_performa():
+    try:
+        client = get_sheets_client()
+        if not client:
+            return None
+
+        sheet_id = os.getenv("GOOGLE_SHEETS_ID")
+        spreadsheet = client.open_by_key(sheet_id)
+        ws = spreadsheet.worksheet("Performance")
+        data = ws.get_all_records()
+
+        if not data:
+            return None
+
+        total = len(data)
+        closed = [d for d in data if d["Status"] == "CLOSED"]
+        wins = [d for d in closed if d["Hasil"] == "WIN"]
+        losses = [d for d in closed if d["Hasil"] == "LOSS"]
+
+        win_rate = (len(wins) / len(closed) * 100) if closed else 0
+
+        # Hitung profit rata-rata
+        profit_list = []
+        for d in closed:
+            try:
+                pl = float(str(d["Profit/Loss %"]).replace("%", ""))
+                profit_list.append(pl)
+            except:
+                pass
+
+        avg_profit = sum(profit_list) / len(profit_list) if profit_list else 0
+        max_loss = min(profit_list) if profit_list else 0
+
+        return {
+            "total_sinyal": total,
+            "sinyal_open": total - len(closed),
+            "sinyal_closed": len(closed),
+            "wins": len(wins),
+            "losses": len(losses),
+            "win_rate": round(win_rate, 1),
+            "avg_profit": round(avg_profit, 2),
+            "max_drawdown": round(max_loss, 2)
+        }
+
+    except Exception as e:
+        print(f"⚠️ Gagal hitung performa: {e}")
+        return None
+
+def update_sinyal_closed(nama_aset):
+    try:
+        client = get_sheets_client()
+        if not client:
+            return
+
+        sheet_id = os.getenv("GOOGLE_SHEETS_ID")
+        spreadsheet = client.open_by_key(sheet_id)
+        ws = spreadsheet.worksheet("Performance")
+        data = ws.get_all_records()
+
+        for i, row in enumerate(data, 2):
+            if row["Aset"] == nama_aset.upper() and row["Status"] == "OPEN":
+                try:
+                    # Ambil harga terkini
+                    if "." in nama_aset:
+                        harga_skrg = get_stock_price(nama_aset)["harga"]
+                    else:
+                        data_harga = get_crypto_price(nama_aset)
+                        aset_key = list(data_harga.keys())[0]
+                        harga_skrg = data_harga[aset_key]["idr"]
+
+                    entry = float(row["Harga Entry"])
+                    sl = float(row["Stop Loss"])
+                    tp = float(row["Take Profit"])
+                    sinyal = row["Sinyal"]
+
+                    # Tentukan WIN/LOSS
+                    hasil = "-"
+                    pl_pct = 0
+
+                    if sinyal == "BELI":
+                        if harga_skrg >= tp:
+                            hasil = "WIN"
+                            pl_pct = round((tp - entry) / entry * 100, 2)
+                        elif harga_skrg <= sl:
+                            hasil = "LOSS"
+                            pl_pct = round((sl - entry) / entry * 100, 2)
+
+                    elif sinyal == "JUAL":
+                        if harga_skrg <= tp:
+                            hasil = "WIN"
+                            pl_pct = round((entry - tp) / entry * 100, 2)
+                        elif harga_skrg >= sl:
+                            hasil = "LOSS"
+                            pl_pct = round((entry - sl) / entry * 100, 2)
+
+                    if hasil != "-":
+                        ws.update_cell(i, 8, harga_skrg)
+                        ws.update_cell(i, 9, hasil)
+                        ws.update_cell(i, 10, f"{pl_pct}%")
+                        ws.update_cell(i, 11, "CLOSED")
+                        print(f"✅ Sinyal {nama_aset} diupdate: {hasil} ({pl_pct}%)")
+
+                except Exception as e:
+                    print(f"⚠️ Error update sinyal: {e}")
+
+    except Exception as e:
+        print(f"⚠️ Gagal update sinyal: {e}")
 
 # ==============================
 # FUNGSI SIMPAN KE EXCEL
@@ -583,6 +771,15 @@ def main():
             print("-" * 55)
             simpan_ke_excel("Crypto", crypto, data_harga, "", hasil)
             simpan_ke_sheets("Crypto", crypto, data_harga, hasil, indikator)
+            # Catat ke performance tracker
+            try:
+                aset_key = list(data_harga.keys())[0]
+                harga_skrg = data_harga[aset_key]["idr"]
+                sinyal, entry, sl, tp = parse_trading_info(hasil, harga_skrg)
+                if sinyal != "HOLD":
+                    catat_sinyal("Crypto", crypto, entry, sinyal, sl, tp)
+            except:
+                pass
             
         elif pilihan == "2":
             print("\nContoh saham Indonesia: BBCA.JK, GOTO.JK, TLKM.JK, BBRI.JK")
@@ -624,6 +821,14 @@ def main():
                 print("-" * 55)
                 simpan_ke_excel("Saham", saham, data_harga, "", hasil)
                 simpan_ke_sheets("Saham", saham, data_harga, hasil, indikator)
+                # Catat ke performance tracker
+                try:
+                    harga_skrg = data_harga["harga"]
+                    sinyal, entry, sl, tp = parse_trading_info(hasil, harga_skrg)
+                    if sinyal != "HOLD":
+                        catat_sinyal("Saham", saham, entry, sinyal, sl, tp)
+                except:
+                    pass
             except Exception as e:
                 if "403" in str(e) or "PermissionDenied" in str(type(e).__name__):
                     print(f"❌ Groq API error - coba lagi atau gunakan VPN!")

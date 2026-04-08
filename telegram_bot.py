@@ -243,6 +243,39 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 teks += f"{i}. *{a['nama_aset']}* → {a['kondisi']} `{a['harga_target']:,}`\n"
             await query.message.reply_text(teks, parse_mode="Markdown")
 
+# Performa
+
+async def performa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("⏳ Menghitung performa bot...")
+    
+    from main import hitung_performa, update_sinyal_closed
+    
+    # Update sinyal yang sudah closed dulu
+    if context.args:
+        update_sinyal_closed(context.args[0])
+    
+    performa = hitung_performa()
+    
+    if not performa:
+        await update.message.reply_text("⚠️ Belum ada data performa!")
+        return
+    
+    teks = f"""
+📊 *PERFORMA BOT*
+
+📈 Total Sinyal: {performa['total_sinyal']}
+🟢 Open: {performa['sinyal_open']}
+🔵 Closed: {performa['sinyal_closed']}
+
+✅ WIN: {performa['wins']}
+❌ LOSS: {performa['losses']}
+🎯 Win Rate: *{performa['win_rate']}%*
+
+💰 Avg Profit: {performa['avg_profit']}%
+📉 Max Drawdown: {performa['max_drawdown']}%
+"""
+    await update.message.reply_text(teks, parse_mode="Markdown")
+
 # ==============================
 # JALANKAN BOT
 # ==============================
@@ -255,6 +288,7 @@ def main():
     app.add_handler(CommandHandler("alerts", alerts_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CommandHandler("performa", performa_cmd))
 
     print("🤖 Telegram Bot berjalan...")
     app.run_polling()
