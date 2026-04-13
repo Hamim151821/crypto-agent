@@ -427,16 +427,23 @@ def catat_sinyal(jenis, nama_aset, harga_entry, sinyal, stop_loss, take_profit):
         spreadsheet = client.open_by_key(sheet_id)
 
         # Cek sheet Performance, kalau tidak ada buat baru
+        headers = [
+            "Tanggal", "Jenis", "Aset", "Sinyal",
+            "Harga Entry", "Stop Loss", "Take Profit",
+            "Harga Penutupan", "Hasil", "Profit/Loss %",
+            "Status"
+        ]
         try:
             ws = spreadsheet.worksheet("Performance")
+            # Cek apakah header sudah ada
+            first_row = ws.row_values(1)
+            if not first_row or first_row[0] != "Tanggal":
+                # Header belum ada, sisipkan di baris 1
+                ws.insert_row(headers, 1)
+                print("✅ Header Performance ditambahkan!")
         except:
             ws = spreadsheet.add_worksheet("Performance", 1000, 15)
-            ws.append_row([
-                "Tanggal", "Jenis", "Aset", "Sinyal",
-                "Harga Entry", "Stop Loss", "Take Profit",
-                "Harga Penutupan", "Hasil", "Profit/Loss %",
-                "Status"
-            ])
+            ws.append_row(headers)
 
         ws.append_row([
             datetime.now().strftime("%d/%m/%Y %H:%M"),
@@ -465,15 +472,45 @@ def hitung_performa():
         sheet_id = os.getenv("GOOGLE_SHEETS_ID")
         spreadsheet = client.open_by_key(sheet_id)
         ws = spreadsheet.worksheet("Performance")
-        data = ws.get_all_records()
-
+        
+        # Gunakan get_all_values agar lebih robust
+        all_values = ws.get_all_values()
+        
+        if len(all_values) < 2:
+            return None
+        
+        # Cari header row
+        header_idx = 0
+        for i, row in enumerate(all_values):
+            if "Tanggal" in row or "Status" in row:
+                header_idx = i
+                break
+        
+        headers = all_values[header_idx]
+        data_rows = all_values[header_idx + 1:]
+        
+        if not data_rows:
+            return None
+        
+        # Convert ke dict
+        data = []
+        for row in data_rows:
+            if len(row) >= len(headers):
+                d = dict(zip(headers, row))
+                data.append(d)
+            elif len(row) > 0 and row[0]:  # Ada data tapi kolom kurang
+                padded = row + [""] * (len(headers) - len(row))
+                d = dict(zip(headers, padded))
+                data.append(d)
+        
         if not data:
             return None
 
         total = len(data)
-        closed = [d for d in data if d["Status"] == "CLOSED"]
-        wins = [d for d in closed if d["Hasil"] == "WIN"]
-        losses = [d for d in closed if d["Hasil"] == "LOSS"]
+        closed = [d for d in data if d.get("Status", "") == "CLOSED"]
+        wins = [d for d in closed if d.get("Hasil", "") == "WIN"]
+        losses = [d for d in closed if d.get("Hasil", "") == "LOSS"]
+        open_signals = [d for d in data if d.get("Status", "") == "OPEN"]
 
         win_rate = (len(wins) / len(closed) * 100) if closed else 0
 
@@ -481,7 +518,7 @@ def hitung_performa():
         profit_list = []
         for d in closed:
             try:
-                pl = float(str(d["Profit/Loss %"]).replace("%", ""))
+                pl = float(str(d.get("Profit/Loss %", "0")).replace("%", ""))
                 profit_list.append(pl)
             except:
                 pass
@@ -491,7 +528,7 @@ def hitung_performa():
 
         return {
             "total_sinyal": total,
-            "sinyal_open": total - len(closed),
+            "sinyal_open": len(open_signals),
             "sinyal_closed": len(closed),
             "wins": len(wins),
             "losses": len(losses),
