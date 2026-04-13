@@ -117,8 +117,22 @@ async def analisis_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         # Simpan ke Google Sheets
-        from main import simpan_ke_sheets, simpan_ke_excel
+        from main import simpan_ke_sheets, simpan_ke_excel, catat_sinyal, parse_trading_info
         simpan_ke_sheets(jenis, aset, data_harga, hasil, indikator)
+
+        # Catat sinyal ke Performance sheet
+        try:
+            if jenis == "Crypto":
+                aset_key = list(data_harga.keys())[0]
+                harga_skrg = data_harga[aset_key]["usd"]
+            else:
+                harga_skrg = data_harga["harga"]
+            
+            sinyal, entry, sl, tp = parse_trading_info(hasil, harga_skrg)
+            if sinyal != "HOLD":
+                catat_sinyal(jenis, aset, entry, sinyal, sl, tp)
+        except Exception as e:
+            print(f"⚠️ Gagal catat sinyal performa: {e}")
 
         header = f"📊 *Analisis {aset.upper()}*\n\n"
         await kirim_pesan_panjang(update, header + hasil)
