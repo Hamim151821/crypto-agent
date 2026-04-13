@@ -16,13 +16,14 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 # ==============================
 async def kirim_pesan_panjang(update, teks):
     maks = 4000
-    if len(teks) <= maks:
-        await update.message.reply_text(teks, parse_mode="Markdown")
-    else:
-        bagian = [teks[i:i+maks] for i in range(0, len(teks), maks)]
-        for b in bagian:
+    bagian_list = [teks] if len(teks) <= maks else [teks[i:i+maks] for i in range(0, len(teks), maks)]
+    for b in bagian_list:
+        try:
             await update.message.reply_text(b, parse_mode="Markdown")
-            time.sleep(0.5)
+        except Exception:
+            # Fallback tanpa Markdown jika format gagal
+            await update.message.reply_text(b)
+        time.sleep(0.3)
 
 # ==============================
 # HELPER — Retry request
@@ -116,12 +117,16 @@ async def analisis_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             data_harga, berita, indikator
         )
 
-        # Simpan ke Google Sheets
-        from main import simpan_ke_sheets, simpan_ke_excel, catat_sinyal, parse_trading_info
-        simpan_ke_sheets(jenis, aset, data_harga, hasil, indikator)
+        # Kirim hasil analisis DULU sebelum simpan ke Sheets
+        header = f"📊 *Analisis {aset.upper()}*\n\n"
+        await kirim_pesan_panjang(update, header + hasil)
 
-        # Catat sinyal ke Performance sheet
+        # Simpan ke Google Sheets (setelah pesan terkirim)
         try:
+            from main import simpan_ke_sheets, simpan_ke_excel, catat_sinyal, parse_trading_info
+            simpan_ke_sheets(jenis, aset, data_harga, hasil, indikator)
+
+            # Catat sinyal ke Performance sheet
             if jenis == "Crypto":
                 aset_key = list(data_harga.keys())[0]
                 harga_skrg = data_harga[aset_key]["usd"]
@@ -132,16 +137,16 @@ async def analisis_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if sinyal != "HOLD":
                 catat_sinyal(jenis, aset, entry, sinyal, sl, tp)
         except Exception as e:
-            print(f"⚠️ Gagal catat sinyal performa: {e}")
-
-        header = f"📊 *Analisis {aset.upper()}*\n\n"
-        await kirim_pesan_panjang(update, header + hasil)
+            print(f"⚠️ Gagal simpan/catat performa: {e}")
 
     except Exception as e:
-        await update.message.reply_text(
-            f"⚠️ Terjadi error saat menganalisis *{aset}*\nCoba beberapa saat lagi!",
-            parse_mode="Markdown"
-        )
+        print(f"❌ ERROR analisis {aset}: {type(e).__name__}: {e}")
+        try:
+            await update.message.reply_text(
+                f"⚠️ Terjadi error saat menganalisis {aset}\n\nDetail: {type(e).__name__}\nCoba beberapa saat lagi!"
+            )
+        except:
+            await update.message.reply_text(f"⚠️ Error: {e}")
 
 # ==============================
 # COMMAND /alert
