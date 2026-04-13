@@ -45,6 +45,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📉 Analisis Saham", callback_data="saham")],
         [InlineKeyboardButton("🔔 Set Alert", callback_data="alert")],
         [InlineKeyboardButton("📋 Lihat Alert Aktif", callback_data="lihat_alert")],
+        [InlineKeyboardButton("📊 Performa Bot", callback_data="performa")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
@@ -241,6 +242,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             teks = "📋 *Alert Aktif:*\n\n"
             for i, a in enumerate(alert_list, 1):
                 teks += f"{i}. *{a['nama_aset']}* → {a['kondisi']} `{a['harga_target']:,}`\n"
+            await query.message.reply_text(teks, parse_mode="Markdown")
+    elif query.data == "performa":
+        from main import hitung_performa
+        await query.message.reply_text("⏳ Menghitung performa bot...")
+        performa = hitung_performa()
+        if not performa:
+            await query.message.reply_text("⚠️ Belum ada data performa!\n\nData performa akan muncul setelah kamu melakukan analisis dan bot mencatat sinyal BELI/JUAL.")
+        else:
+            teks = f"""
+📊 *PERFORMA BOT*
+
+📈 Total Sinyal: {performa['total_sinyal']}
+🟢 Open: {performa['sinyal_open']}
+🔵 Closed: {performa['sinyal_closed']}
+
+✅ WIN: {performa['wins']}
+❌ LOSS: {performa['losses']}
+🎯 Win Rate: *{performa['win_rate']}%*
+
+💰 Avg Profit: {performa['avg_profit']}%
+📉 Max Drawdown: {performa['max_drawdown']}%
+
+_Gunakan /performa [aset] untuk update sinyal tertentu_
+"""
             await query.message.reply_text(teks, parse_mode="Markdown")
 
 # Performa

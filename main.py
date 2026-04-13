@@ -725,9 +725,10 @@ def main():
         print("3. Set Alert Harga")
         print("4. Lihat Alert Aktif")
         print("5. Hapus Alert")
-        print("6. Keluar")
+        print("6. 📊 Lihat Performa")
+        print("7. Keluar")
 
-        pilihan = input("\nMasukkan pilihan (1/2/3/4/5/6): ")
+        pilihan = input("\nMasukkan pilihan (1/2/3/4/5/6/7): ")
 
         if pilihan == "1":
             print("\nContoh: bitcoin, ethereum, solana, dogecoin")
@@ -883,6 +884,32 @@ def main():
                     print("❌ Nomor tidak valid!")
 
         elif pilihan == "6":
+            print("\n⏳ Menghitung performa bot...")
+            performa = hitung_performa()
+            if not performa:
+                print("⚠️ Belum ada data performa!")
+            else:
+                print("\n" + "=" * 55)
+                print("   📊 PERFORMA BOT")
+                print("=" * 55)
+                print(f"   📈 Total Sinyal : {performa['total_sinyal']}")
+                print(f"   🟢 Open         : {performa['sinyal_open']}")
+                print(f"   🔵 Closed       : {performa['sinyal_closed']}")
+                print(f"   ✅ WIN          : {performa['wins']}")
+                print(f"   ❌ LOSS         : {performa['losses']}")
+                print(f"   🎯 Win Rate     : {performa['win_rate']}%")
+                print(f"   💰 Avg Profit   : {performa['avg_profit']}%")
+                print(f"   📉 Max Drawdown : {performa['max_drawdown']}%")
+                print("=" * 55)
+                
+                # Opsi update sinyal
+                update = input("\nUpdate sinyal tertentu? (y/n): ").lower()
+                if update == "y":
+                    nama = input("Masukkan nama aset (contoh: bitcoin / BBCA.JK): ")
+                    print(f"⏳ Mengupdate sinyal {nama}...")
+                    update_sinyal_closed(nama)
+
+        elif pilihan == "7":
             print("\nSampai jumpa! 👋")
             break
         else:
