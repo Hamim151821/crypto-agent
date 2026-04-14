@@ -5,24 +5,52 @@ import os
 import sys
 import time
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from main import get_crypto_price, get_stock_price, get_crypto_news, get_stock_news, get_crypto_indicators, get_stock_indicators, analisis_ai, alert_list, tambah_alert, simpan_alert
+from main import (
+    get_crypto_price, get_stock_price, 
+    get_crypto_news, get_stock_news, 
+    get_crypto_indicators, get_stock_indicators, 
+    analisis_ai_v2, analisis_ai,
+    alert_list, tambah_alert, simpan_alert,
+    simpan_ke_sheets, simpan_ke_excel, catat_sinyal,
+    hitung_performa, update_sinyal_closed,
+    DEFAULT_MODAL
+)
 
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
+# Per-user modal storage
+user_modals = {}
+
+def get_user_modal(user_id):
+    """Ambil modal user, default Rp 1.000.000"""
+    return user_modals.get(user_id, DEFAULT_MODAL)
+
 # ==============================
 # HELPER — Kirim pesan panjang
 # ==============================
-async def kirim_pesan_panjang(update, teks):
+async def kirim_pesan_panjang(update_or_message, teks):
+    """Kirim pesan panjang, dipecah per 4000 karakter"""
     maks = 4000
     bagian_list = [teks] if len(teks) <= maks else [teks[i:i+maks] for i in range(0, len(teks), maks)]
+    
+    # Tentukan target reply
+    if hasattr(update_or_message, 'message') and update_or_message.message:
+        message = update_or_message.message
+    elif hasattr(update_or_message, 'reply_text'):
+        message = update_or_message
+    else:
+        message = update_or_message
+    
     for b in bagian_list:
         try:
-            await update.message.reply_text(b, parse_mode="Markdown")
+            await message.reply_text(b, parse_mode=None)
         except Exception:
-            # Fallback tanpa Markdown jika format gagal
-            await update.message.reply_text(b)
+            try:
+                await message.reply_text(b)
+            except:
+                pass
         time.sleep(0.3)
 
 # ==============================
@@ -47,16 +75,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔔 Set Alert", callback_data="alert")],
         [InlineKeyboardButton("📋 Lihat Alert Aktif", callback_data="lihat_alert")],
         [InlineKeyboardButton("📊 Performa Bot", callback_data="performa")],
+        [InlineKeyboardButton("💰 Set Modal", callback_data="set_modal")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "🤖 *CRYPTO & SAHAM AGENT*\n\nSelamat datang! Pilih menu:",
+        "🤖 *CRYPTO & SAHAM AGENT v2.0*\n"
+        "10-Point Analysis System\n\n"
+        "Pilih menu di bawah:",
         parse_mode="Markdown",
         reply_markup=reply_markup
     )
 
 # ==============================
-# COMMAND /analisis
+# COMMAND /analisis — 10-Point System
 # ==============================
 async def analisis_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -67,7 +98,14 @@ async def analisis_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     aset = context.args[0].strip()
-    await update.message.reply_text(f"⏳ Mengambil data *{aset}*...", parse_mode="Markdown")
+    user_id = update.effective_user.id
+    modal = get_user_modal(user_id)
+    
+    await update.message.reply_text(
+        f"⏳ Mengambil data *{aset}*...\n"
+        f"💰 Modal: Rp {modal:,.0f}",
+        parse_mode="Markdown"
+    )
 
     try:
         # Tentukan jenis aset
@@ -86,6 +124,11 @@ async def analisis_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             berita = get_stock_news(aset)
+            
+            await update.message.reply_text(
+                f"⏳ Menghitung indikator teknikal *{aset}* (enhanced)...",
+                parse_mode="Markdown"
+            )
             indikator = get_stock_indicators(aset)
 
         else:
@@ -105,37 +148,40 @@ async def analisis_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             berita = get_crypto_news(aset)
+            
+            await update.message.reply_text(
+                f"⏳ Menghitung indikator teknikal *{aset}* (enhanced)...",
+                parse_mode="Markdown"
+            )
             indikator = get_crypto_indicators(aset)
 
         await update.message.reply_text(
-            f"✅ Data berhasil diambil!\n🤖 AI sedang menganalisis *{aset}*...",
+            f"✅ Data berhasil diambil!\n🤖 AI sedang menganalisis *{aset}* (10-Point System)...",
             parse_mode="Markdown"
         )
 
-        hasil = analisis_ai(
-            f"Berikan analisis lengkap untuk {aset}",
-            data_harga, berita, indikator
+        # === PANGGIL ANALISIS V2 ===
+        hasil, analysis_data = analisis_ai_v2(
+            aset, jenis, data_harga, berita, indikator, modal
         )
 
-        # Kirim hasil analisis DULU sebelum simpan ke Sheets
-        header = f"📊 *Analisis {aset.upper()}*\n\n"
-        await kirim_pesan_panjang(update, header + hasil)
+        # Kirim hasil analisis
+        await kirim_pesan_panjang(update, hasil)
 
         # Simpan ke Google Sheets (setelah pesan terkirim)
         try:
-            from main import simpan_ke_sheets, simpan_ke_excel, catat_sinyal, parse_trading_info
             simpan_ke_sheets(jenis, aset, data_harga, hasil, indikator)
 
             # Catat sinyal ke Performance sheet
-            if jenis == "Crypto":
-                aset_key = list(data_harga.keys())[0]
-                harga_skrg = data_harga[aset_key]["usd"]
-            else:
-                harga_skrg = data_harga["harga"]
-            
-            sinyal, entry, sl, tp = parse_trading_info(hasil, harga_skrg)
-            if sinyal != "HOLD":
-                catat_sinyal(jenis, aset, entry, sinyal, sl, tp)
+            if analysis_data.get("sinyal") != "HOLD":
+                catat_sinyal(
+                    jenis, aset,
+                    analysis_data["entry"],
+                    analysis_data["sinyal"],
+                    analysis_data["sl"],
+                    analysis_data["tp"],
+                    analysis_data.get("skor_detail")
+                )
         except Exception as e:
             print(f"⚠️ Gagal simpan/catat performa: {e}")
 
@@ -147,6 +193,43 @@ async def analisis_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except:
             await update.message.reply_text(f"⚠️ Error: {e}")
+
+# ==============================
+# COMMAND /modal
+# ==============================
+async def modal_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    if not context.args:
+        current = get_user_modal(user_id)
+        await update.message.reply_text(
+            f"💰 *Modal kamu saat ini:* Rp {current:,.0f}\n\n"
+            f"Untuk mengubah, ketik:\n`/modal 5000000`\n\n"
+            f"Contoh:\n"
+            f"• `/modal 1000000` → Rp 1.000.000\n"
+            f"• `/modal 10000000` → Rp 10.000.000\n"
+            f"• `/modal 50000000` → Rp 50.000.000",
+            parse_mode="Markdown"
+        )
+        return
+    
+    try:
+        modal_baru = float(context.args[0].replace(".", "").replace(",", ""))
+        if modal_baru <= 0:
+            raise ValueError("Modal harus positif")
+        
+        user_modals[user_id] = modal_baru
+        await update.message.reply_text(
+            f"✅ *Modal berhasil diubah!*\n\n"
+            f"💰 Modal baru: Rp {modal_baru:,.0f}\n"
+            f"📊 Risk per trade: Rp {modal_baru * 0.01:,.0f} (1%)",
+            parse_mode="Markdown"
+        )
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Format salah! Masukkan angka.\n\nContoh: `/modal 5000000`",
+            parse_mode="Markdown"
+        )
 
 # ==============================
 # COMMAND /alert
@@ -209,14 +292,17 @@ async def alerts_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==============================
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     teks = """
-🤖 *PANDUAN CRYPTO & SAHAM AGENT*
+🤖 *PANDUAN CRYPTO & SAHAM AGENT v2.0*
+_(10-Point Analysis System)_
 
 📌 *Perintah yang tersedia:*
 
 `/start` → Menu utama
-`/analisis [aset]` → Analisis harga & sinyal
+`/analisis [aset]` → Analisis harga & sinyal (10-Point)
+`/modal [jumlah]` → Set modal trading
 `/alert [aset] [kondisi] [harga]` → Set alert harga
 `/alerts` → Lihat semua alert aktif
+`/performa [aset]` → Lihat & update performa
 `/help` → Tampilkan panduan ini
 
 📌 *Contoh penggunaan:*
@@ -225,8 +311,15 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 `/analisis ethereum`
 `/analisis BBCA.JK`
 `/analisis AAPL`
+`/modal 5000000`
 `/alert bitcoin naik 70000`
-`/alert BBCA.JK turun 6000`
+
+📊 *Fitur 10-Point System:*
+• Adaptive Learning (belajar dari histori)
+• Market Condition (Trending/Sideways/Volatile)
+• Deterministic Scoring (konsisten & terukur)
+• Copy Trading & Position Sizing
+• No-Trade Zone Detection
 
 ⚠️ _Analisis ini bukan saran investasi. Selalu lakukan riset sendiri!_
 """
@@ -241,12 +334,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "crypto":
         await query.message.reply_text(
-            "📈 *Analisis Crypto*\n\nKetik perintah:\n`/analisis bitcoin`\n`/analisis ethereum`\n`/analisis solana`",
+            "📈 *Analisis Crypto (10-Point System)*\n\nKetik perintah:\n`/analisis bitcoin`\n`/analisis ethereum`\n`/analisis solana`",
             parse_mode="Markdown"
         )
     elif query.data == "saham":
         await query.message.reply_text(
-            "📉 *Analisis Saham*\n\nKetik perintah:\n`/analisis BBCA.JK`\n`/analisis BBRI.JK`\n`/analisis AAPL`",
+            "📉 *Analisis Saham (10-Point System)*\n\nKetik perintah:\n`/analisis BBCA.JK`\n`/analisis BBRI.JK`\n`/analisis AAPL`",
             parse_mode="Markdown"
         )
     elif query.data == "alert":
@@ -263,7 +356,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 teks += f"{i}. *{a['nama_aset']}* → {a['kondisi']} `{a['harga_target']:,}`\n"
             await query.message.reply_text(teks, parse_mode="Markdown")
     elif query.data == "performa":
-        from main import hitung_performa
         await query.message.reply_text("⏳ Menghitung performa bot...")
         performa = hitung_performa()
         if not performa:
@@ -286,13 +378,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 _Gunakan /performa [aset] untuk update sinyal tertentu_
 """
             await query.message.reply_text(teks, parse_mode="Markdown")
+    elif query.data == "set_modal":
+        user_id = query.from_user.id
+        current = get_user_modal(user_id)
+        await query.message.reply_text(
+            f"💰 *Modal kamu saat ini:* Rp {current:,.0f}\n\n"
+            f"Untuk mengubah, ketik:\n`/modal [jumlah]`\n\n"
+            f"Contoh: `/modal 5000000`",
+            parse_mode="Markdown"
+        )
 
-# Performa
-
+# ==============================
+# COMMAND /performa
+# ==============================
 async def performa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Menghitung performa bot...")
-    
-    from main import hitung_performa, update_sinyal_closed
     
     # Update sinyal yang sudah closed dulu
     if context.args:
@@ -328,13 +428,14 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("analisis", analisis_cmd))
+    app.add_handler(CommandHandler("modal", modal_cmd))
     app.add_handler(CommandHandler("alert", alert_cmd))
     app.add_handler(CommandHandler("alerts", alerts_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(CommandHandler("performa", performa_cmd))
+    app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("🤖 Telegram Bot berjalan...")
+    print("🤖 Telegram Bot v2.0 (10-Point System) berjalan...")
     app.run_polling()
 
 if __name__ == "__main__":
