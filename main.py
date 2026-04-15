@@ -983,7 +983,13 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
         elif total_skor < 0:
             sinyal_display = "HOLD (Bearish Bias)"
         else:
-            sinyal_display = "HOLD"
+            # Skor = 0 → tentukan dari trend dominan
+            if "TRENDING UP" in market_condition:
+                sinyal_display = "HOLD (Bullish Bias)"
+            elif "TRENDING DOWN" in market_condition:
+                sinyal_display = "HOLD (Bearish Bias)"
+            else:
+                sinyal_display = "HOLD"
     else:
         sinyal_display = sinyal
 
@@ -1206,6 +1212,14 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         curr = "USD"
     
     position_size = calculate_position_size(modal, entry, sl, sinyal, market_condition, curr)
+    
+    # POSITION SIZE VALIDATION: Jika size < 1 → NO TRADE
+    if position_size < 1 and sinyal != "HOLD":
+        sinyal = "HOLD"
+        entry = 0
+        sl = 0
+        tp = 0
+        position_size = 0
     
     # AI Reasoning (LLM call — hanya untuk penjelasan)
     alasan = get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition)
