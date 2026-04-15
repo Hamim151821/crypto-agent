@@ -1107,17 +1107,36 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     else:
         sinyal = "HOLD"
     
-    # === ANTI OVER-HOLD ===
-    # Jika TRENDING DOWN + volume tinggi + skor ≤ -2 → SELL (WEAK)
+    # === ANTI OVER-HOLD + EDGE CASE SCORING ===
     is_trending_down = market_condition.startswith("TRENDING DOWN")
     is_trending_up = market_condition.startswith("TRENDING UP")
     vol_tinggi = indikator.get("volume_status") == "TINGGI"
     
-    if sinyal == "HOLD" and is_trending_down and vol_tinggi and total_skor <= -2:
-        sinyal = "SELL (WEAK)"
-    # Jika TRENDING UP + skor ≥ +3 → BUY (WEAK)
-    if sinyal == "HOLD" and is_trending_up and total_skor >= 3:
-        sinyal = "BUY (WEAK)"
+    if sinyal == "HOLD":
+        # EDGE CASE: skor = -2 + TRENDING DOWN → SELL (WEAK)
+        if is_trending_down and total_skor <= -2:
+            sinyal = "SELL (WEAK)"
+        # EDGE CASE: skor = +4 + TRENDING UP → BUY (WEAK)
+        elif is_trending_up and total_skor >= 3:
+            sinyal = "BUY (WEAK)"
+        # TRENDING DOWN + volume tinggi + skor ≤ -2 → SELL
+        elif is_trending_down and vol_tinggi and total_skor <= -2:
+            sinyal = "SELL (WEAK)"
+        # TRENDING UP + skor ≥ +3 → BUY
+        elif is_trending_up and total_skor >= 3:
+            sinyal = "BUY (WEAK)"
+    
+    # === SENTIMENT CONSISTENCY ===
+    sentimen_status = sentimen.get("status", "NETRAL")
+    sentimen_skor = sentimen.get("skor", 0)
+    if sentimen_status == "NETRAL" and sentimen_skor != 0:
+        # Jika NETRAL tapi skor ≠ 0 → ubah ke NETRAL dengan skor 0
+        sentimen["skor"] = 0
+        sentimen["dampak"] = "Tidak ada sentimen signifikan"
+    elif sentimen_status != "NETRAL" and sentimen_skor == 0:
+        # Jika tidak NETRAL tapi skor = 0 → ubah ke NETRAL
+        sentimen["status"] = "NETRAL"
+        sentimen["dampak"] = "Tidak ada sentimen signifikan"
     
     # 7. Confidence (WAJIB DISIPLIN)
     confidence = min(abs(total_skor) / 10 * 100, 100)
