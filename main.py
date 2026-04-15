@@ -951,6 +951,21 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     breakout_fmt = fmt_price(breakout_level, curr)
     breakdown_fmt = fmt_price(breakdown_level, curr)
     
+    # === ANALISIS POSISI HARGA TERHADAP S/R ===
+    current_price = indikator.get("price", 0)
+    if current_price > 0 and support > 0 and resistance > 0:
+        range_mid = (support + resistance) / 2
+        if current_price <= support * 1.02:
+            posisi_harga = "dekat support → potensi rebound"
+        elif current_price >= resistance * 0.98:
+            posisi_harga = "dekat resistance → potensi rejection"
+        elif current_price > support * 1.02 and current_price < resistance * 0.98:
+            posisi_harga = "di tengah range → no trade zone"
+        else:
+            posisi_harga = "di area netral"
+    else:
+        posisi_harga = "di area tidak terdeteksi"
+    
     # Volume + Trend confirmation text
     is_vol_tinggi = vol_status == "TINGGI"
     is_bearish_trend = "TRENDING DOWN" in market_condition
@@ -967,6 +982,7 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
 KONFLIK: {conflict_text}
 SINYAL: {sinyal}
 SKOR: {total_skor}
+POSISI HARSA TERHADAP S/R: {posisi_harga}
 SENTIMEN: {sent_status}
 VOLUME CONFIRMATION: {volume_confirm}
 
@@ -983,12 +999,16 @@ PEDOMAN:
    - DILARANG: Menyebut "didukung sentimen" jika sentimen NETRAL
    - DILARANG: Menyebut faktor yang tidak ada di data
    - WAJIB: Jika netral → tulis "tanpa dukungan sentimen kuat"
-8. Jika HOLD: WAJIB jelaskan kondisi saat ini DAN strategi:
+8. WAJIB sebutkan posisi harga terhadap S/R dalam alasan:
+   - Dekat support → potensi rebound
+   - Dekat resistance → potensi rejection
+   - Di tengah range → no trade zone
+9. Jika HOLD: WAJIB jelaskan kondisi saat ini DAN strategi:
    - Jelaskan posisi harga sekarang (di tengah range, dekat support, dekat resistance)
    - Format: "Saat ini harga berada di area {posisi} → belum ideal untuk entry"
    - Tambahkan strategi: "Tunggu di {level} | Entry saat {kondisi}"
-9. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
-10. DILARANG menentukan level jauh dari S/R
+10. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
+11. DILARANG menentukan level jauh dari S/R
 
 CONTOH OUTPUT BUY:
 "Trend bullish menjadi faktor dominan dengan volume tinggi. Meskipun ada risiko koreksi minor, sinyal utama tetap BUY."
