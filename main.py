@@ -1240,36 +1240,44 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     is_bearish = total_skor < 0
     is_bullish = total_skor > 0
     
-    # 6. VOLUME ADJUSTMENT - JIKA VOLUME RENDAH: HOLD atau WAIT CONFIRMATION
-    # Volume < 1.0 = sinyal lemah = DILARANG entry agresif
-    # Default: HOLD
+    # === KONFLIK INDIKATOR - JIKA KONFLIK: HOLD SAMPAI KONFIRMASI ===
+    # Cek konflik antara trend dan momentum
+    rsi_status = indikator.get("rsi_status", "NORMAL")
+    macd_status = indikator.get("macd_status", "NORMAL")
+    trend_status = indikator.get("trend_status", "NEUTRAL")
     
-    if total_skor >= 4:
-        # Strong signal tapi volume rendah → WAIT CONFIRMATION
-        if vol_rendah:
-            sinyal = "HOLD"
-        else:
-            sinyal = "BUY"
+    # Deteksi konflik indikator
+    has_conflict = False
+    if ("BULLISH" in trend_status and "BEARISH" in macd_status) or ("BEARISH" in trend_status and "BULLISH" in macd_status):
+        has_conflict = True
+    if ("OVERSOLD" in rsi_status and "BEARISH" in macd_status) or ("OVERBOUGHT" in rsi_status and "BULLISH" in macd_status):
+        has_conflict = True
+    
+    # 6. SIGNAL LOGIC - KONFIRMASI WAJIB
+    # Jika konflik indikator: HOLD SAMPAI BREAKOUT/BREAKDOWN TERKONFIRMASI
+    
+    if has_conflict:
+        # Konflik indikator → HOLD sampai konfirmasi
+        sinyal = "HOLD"
+    elif vol_rendah:
+        # Volume rendah → HOLD
+        sinyal = "HOLD"
+    elif total_skor >= 4:
+        # Strong signal + semua searah + volume OK → BUY
+        sinyal = "BUY"
     elif total_skor >= 1:
-        # Lemah signal + volume rendah = HOLD
-        if vol_rendah:
-            sinyal = "HOLD"
-        else:
-            sinyal = "BUY (WEAK)"
+        # Lemah signal + volume OK → BUY (WEAK)
+        sinyal = "BUY (WEAK)"
     elif total_skor <= -4:
-        # Strong signal tapi volume rendah → WAIT CONFIRMATION
-        if vol_rendah:
-            sinyal = "HOLD"
-        else:
-            sinyal = "SELL"
+        # Strong signal + semua searah + volume OK → SELL
+        sinyal = "SELL"
     elif total_skor <= -1:
-        # Lemah signal + volume rendah = HOLD
-        if vol_rendah:
-            sinyal = "HOLD"
-        else:
-            sinyal = "SELL (WEAK)"
+        # Lemah signal + volume OK → SELL (WEAK)
+        sinyal = "SELL (WEAK)"
     else:
         sinyal = "HOLD"
+    
+    # has_conflict sudah tersedia dari sinyal logic (line ~1253)
     
     # === SENTIMENT CONSISTENCY ===
     sentimen_status = sentimen.get("status", "NETRAL")
@@ -1290,24 +1298,10 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     has_clear_trend = is_trending_up or is_trending_down
     has_valid_sr = indikator.get("support", 0) > 0 and indikator.get("resistance", 0) > 0
     
-    # === DETEKSI KONFLIK UNTUK CONFIDENCE ===
-    # Check from indicators
-    rsi_status = indikator.get("rsi_status", "NORMAL")
-    macd_status = indikator.get("macd_status", "NORMAL")
-    trend_status = indikator.get("trend_status", "NEUTRAL")
-    
-    has_conflict = False
-    if ("BULLISH" in trend_status and "BEARISH" in macd_status) or ("BEARISH" in trend_status and "BULLISH" in macd_status):
-        has_conflict = True
-    if ("OVERSOLD" in rsi_status and "BEARISH" in macd_status) or ("OVERBOUGHT" in rsi_status and "BULLISH" in macd_status):
-        has_conflict = True
-    if vol_rendah:
-        has_conflict = True  # Volume rendah = sinyal lemah = conflict-like
+    # Cek konflik untuk confidence scoring (sudah dihitung di sinyal logic)
+    # has_conflict sudah ada dari sinyal logic
     
     # 7. CONFIDENCE SCORE (LOGIS)
-    # Strong signal (semua indikator searah) → 60–80%
-    # Weak signal / konflik → maksimal 45–50%
-    # HOLD → maksimal 40%
     abs_skor = abs(total_skor)
     
     # Cek apakah semua indikator searah (strong signal)
