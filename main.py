@@ -599,6 +599,7 @@ def analyze_news(berita, symbol):
     is_crypto = not symbol.endswith(".JK")
     
     labeled_berita = []
+    has_makro_only = True
     for b in top_berita:
         judul = b.get('judul', '').lower()
         label = "LANGSUNG"
@@ -614,11 +615,18 @@ def analyze_news(berita, symbol):
                 label = "SEKTOR"
             else:
                 label = "MAKRO"
+        
+        if label != "MAKRO":
+            has_makro_only = False
+            
         labeled_berita.append({
             "judul": b.get('judul', ''),
             "sumber": b.get('sumber', 'N/A'),
             "label": label
         })
+    
+    # Override dampak jika hanya berita makro
+    makro_override = "Sentimen makro, dampak langsung terbatas" if has_makro_only else None
     
     prompt = f"""Analisis sentimen berita untuk aset {symbol}.
 
@@ -655,6 +663,10 @@ JAWAB HANYA dalam format JSON (tanpa markdown, tanpa penjelasan tambahan):
             skor = max(-1.0, min(1.0, float(parsed.get("skor", 0))))
             dampak = str(parsed.get("dampak", "Tidak ada dampak signifikan"))
             
+            # Override jika hanya berita makro
+            if makro_override:
+                dampak = makro_override
+            
             return {
                 "berita_label": labeled_berita,
                 "status": status,
@@ -666,7 +678,7 @@ JAWAB HANYA dalam format JSON (tanpa markdown, tanpa penjelasan tambahan):
             "berita_label": labeled_berita,
             "status": "NETRAL",
             "skor": 0.0,
-            "dampak": "Tidak ada sentimen signifikan"
+            "dampak": makro_override if makro_override else "Tidak ada sentimen signifikan"
         }
     except Exception as e:
         print(f"⚠️ Error sentiment analysis: {e}")
@@ -674,7 +686,7 @@ JAWAB HANYA dalam format JSON (tanpa markdown, tanpa penjelasan tambahan):
             "berita_label": labeled_berita,
             "status": "NETRAL",
             "skor": 0.0,
-            "dampak": "Tidak ada sentimen signifikan"
+            "dampak": makro_override if makro_override else "Tidak ada sentimen signifikan"
         }
 
 # ==============================
@@ -716,17 +728,17 @@ def calculate_score(indikator, sentimen, weights, market_condition):
     else:
         scores["trend"] = 0
     
-    # Volume Score — konfirmasi arah
+    # Volume Score — SMART LOGIC
     volume_status = indikator.get("volume_status", "NORMAL")
     direction = scores["macd"] + scores["trend"]
     
     if volume_status == "TINGGI":
         if direction > 0:
-            scores["volume"] = 1   # Konfirmasi bullish
+            scores["volume"] = 1   # Konfirmasi searah trend
         elif direction < 0:
-            scores["volume"] = -1  # Konfirmasi bearish
+            scores["volume"] = 0   # Volume tinggi tapi lawan trend
         else:
-            scores["volume"] = 0   # Mixed direction
+            scores["volume"] = 0
     elif volume_status == "RENDAH":
         scores["volume"] = -1  # Volume lemah = sinyal lemah
     else:
@@ -741,17 +753,22 @@ def calculate_score(indikator, sentimen, weights, market_condition):
     else:
         scores["sentimen"] = 0
     
-    # === MARKET CONDITION ADJUSTMENT ===
-    # Trending → fokus MA & MACD (boost trend/macd, kurangi RSI)
-    # Sideways → fokus RSI & S/R (boost RSI, kurangi trend)
-    # Volatile → tidak ubah scoring, handle di SL/position sizing
-    if market_condition == "TRENDING":
-        scores["trend"] = round(scores["trend"] * 1.3)
-        scores["macd"] = round(scores["macd"] * 1.3)
-        scores["rsi"] = round(scores["rsi"] * 0.6)
-    elif market_condition == "SIDEWAYS":
-        scores["rsi"] = round(scores["rsi"] * 1.3)
-        scores["trend"] = round(scores["trend"] * 0.5)
+    # === TREND DOMINANCE RULE ===
+    # Jika TRENDING DOWN + volume tinggi → kurangi sinyal bullish kecil
+    is_trending_down = market_condition.startswith("TRENDING DOWN")
+    is_trending_up = market_condition.startswith("TRENDING UP")
+    
+    if is_trending_down and volume_status == "TINGGI":
+        if scores["macd"] == 2:  # Bullish tapi trend turun
+            scores["macd"] = 0
+        if scores["rsi"] == 2:   # Oversold tapi trend turun
+            scores["rsi"] = 0
+    
+    if is_trending_up and volume_status == "TINGGI":
+        if scores["macd"] == -2:  # Bearish tapi trend naik
+            scores["macd"] = 0
+        if scores["rsi"] == -2:  # Overbought tapi trend naik
+            scores["rsi"] = 0
     
     # === APPLY ADAPTIVE WEIGHTS ===
     total = 0.0
@@ -1063,6 +1080,9 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     confidence = min(abs(total_skor) / 10 * 100, 100)
     if total_skor == 0:
         confidence = 50
+    # HOLD should have 40-60% confidence
+    if sinyal == "HOLD":
+        confidence = min(max(confidence, 40), 60)
     if confidence < 60:
         sinyal = "HOLD"
     
@@ -1073,7 +1093,6 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     
     # Cek ulang confidence setelah volume adjustment
     if confidence < 60:
-        sinyal = "HOLD"
         sinyal = "HOLD"
     
     # 8. No-Trade Zone Check
@@ -1097,13 +1116,18 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     
     rr_ratio = f"1:{reward_pct / risk_pct:.1f}" if risk_pct > 0 else "N/A"
     
-    # Risk Level
-    if confidence < 70:
+    # Risk Level based on conditions
+    is_volatile = "VOLATILE" in market_condition
+    is_strong_trend = market_condition.startswith("TRENDING UP") or market_condition.startswith("TRENDING DOWN")
+    
+    if sinyal == "HOLD":
+        risk_level = "LOW"
+    elif is_volatile:
         risk_level = "HIGH"
-    elif confidence < 85:
+    elif is_strong_trend and confidence >= 70:
         risk_level = "MEDIUM"
     else:
-        risk_level = "LOW"
+        risk_level = "HIGH"
     
     # Position Sizing
     # Tentukan currency berdasarkan jenis aset
