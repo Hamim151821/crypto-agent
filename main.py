@@ -808,17 +808,27 @@ def calculate_entry_sl_tp(harga, sinyal, indikator):
 # ==============================
 # 10. COPY TRADING — POSITION SIZING
 # ==============================
-def calculate_position_size(modal, entry, sl, sinyal, market_condition="TRENDING"):
+def calculate_position_size(modal, entry, sl, sinyal, market_condition="TRENDING", currency="USD"):
     """
     Position Size = (Risk% × Modal) / |Entry - Stop Loss|
     Risk: 1% normal, 0.5% volatile
+    Konversi modal ke mata uang yang sama dengan entry price
     """
     if sinyal == "HOLD" or entry == 0:
         return 0
     
     # Risk per trade: 1% normal, 0.5% kalau volatile
     risk_pct = 0.005 if market_condition == "VOLATILE" else 0.01
-    risk_per_trade = modal * risk_pct
+    
+    # Konversi modal ke mata uang yang sama dengan entry
+    if currency == "USD":
+        # Modal default IDR, convert ke USD (approx rate 16000 IDR/USD)
+        modal_usd = modal / 16000
+        risk_per_trade = modal_usd * risk_pct
+    elif currency == "IDR":
+        risk_per_trade = modal * risk_pct
+    else:
+        risk_per_trade = modal * risk_pct
     
     risk_per_unit = abs(entry - sl)
     
@@ -1001,7 +1011,7 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     if not indikator:
         empty_data = {
             "sinyal": "HOLD", "entry": 0, "sl": 0, "tp": 0,
-            "skor": 0, "confidence": 0, "risk_level": "HIGH",
+            "skor": 0, "confidence": 50, "risk_level": "LOW",
             "skor_detail": {}, "position_size": 0
         }
         return "⚠️ Data indikator tidak tersedia. Coba lagi nanti.", empty_data
@@ -1073,7 +1083,15 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         risk_level = "LOW"
     
     # Position Sizing
-    position_size = calculate_position_size(modal, entry, sl, sinyal, market_condition)
+    # Tentukan currency berdasarkan jenis aset
+    if jenis == "Crypto":
+        curr = "USD"
+    elif symbol.endswith(".JK"):
+        curr = "IDR"
+    else:
+        curr = "USD"
+    
+    position_size = calculate_position_size(modal, entry, sl, sinyal, market_condition, curr)
     
     # AI Reasoning (LLM call — hanya untuk penjelasan)
     alasan = get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition)
