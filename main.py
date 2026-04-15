@@ -884,6 +884,21 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     - Jika HOLD, kasih trigger actionable
     - Jika BUY/SELL, nada pasti
     """
+    # Extract trend structure and MA50 from indikator
+    ma50 = indikator.get("ma50", 0)
+    current_price = indikator.get("price", 0)
+    trend_structure = "netral"
+    if market_condition.startswith("TRENDING UP"):
+        if current_price > 0 and ma50 > 0 and current_price < ma50:
+            trend_structure = "bullish lemah (fase pullback)"
+        elif current_price > 0 and ma50 > 0 and current_price > ma50:
+            trend_structure = "bullish kuat"
+    elif market_condition.startswith("TRENDING DOWN"):
+        if current_price > 0 and ma50 > 0 and current_price > ma50:
+            trend_structure = "bearish lemah (fase pullback)"
+        elif current_price > 0 and ma50 > 0 and current_price < ma50:
+            trend_structure = "bearish kuat"
+    
     rsi_status = indikator.get("rsi_status", "N/A")
     macd_status = indikator.get("macd_status", "N/A")
     trend_status = indikator.get("trend_status", "N/A")
@@ -946,8 +961,19 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     breakout_fmt = fmt_price(breakout_level, curr)
     breakdown_fmt = fmt_price(breakdown_level, curr)
     
-    # === ANALISIS POSISI HARGA TERHADAP S/R ===
+    # === ANALISIS POSISI HARGA TERHADAP S/R DAN MA ===
     current_price = indikator.get("price", 0)
+    ma50 = indikator.get("ma50", 0)
+    
+    # Validasi struktur trend
+    trend_structure = "kuat"
+    if market_condition.startswith("TRENDING UP"):
+        if current_price > 0 and ma50 > 0 and current_price < ma50:
+            trend_structure = "bullish lemah (fase pullback dalam uptrend)"
+        elif current_price > 0 and ma50 > 0 and current_price > ma50:
+            trend_structure = "bullish kuat"
+    
+    # Kondisi market dengan struktur
     if current_price > 0 and support > 0 and resistance > 0:
         range_mid = (support + resistance) / 2
         if current_price <= support * 1.02:
@@ -955,7 +981,11 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
         elif current_price >= resistance * 0.98:
             posisi_harga = "dekat resistance → potensi rejection"
         elif current_price > support * 1.02 and current_price < resistance * 0.98:
-            posisi_harga = "di tengah range → no trade zone"
+            # Jika trend bullish tapi di tengah range
+            if market_condition.startswith("TRENDING UP"):
+                posisi_harga = "di tengah range dalam trend bullish → konsolidasi"
+            else:
+                posisi_harga = "di area konsolidasi"
         else:
             posisi_harga = "di area netral"
     else:
@@ -977,13 +1007,22 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
 KONFLIK: {conflict_text}
 SINYAL: {sinyal}
 SKOR: {total_skor}
-POSISI HARSA TERHADAP S/R: {posisi_harga}
+STRUKTUR TREND: {trend_structure}
+POSISI HARGA: {posisi_harga} | MA50: {ma50}
 SENTIMEN: {sent_status}
-VOLUME CONFIRMATION: {volume_confirm}
+VOLUME: {volume_confirm}
 
 PEDOMAN:
-1. Jika BUY: WAJIB sebutkan alasan utama (trend atau momentum), format: "trend bullish menjadi faktor dominan..." atau "momentum naik didukung..."
-2. Jika BUY: WAJIB tambahkan "meskipun ada risiko X, sinyal utama tetap BUY"
+1. Jika BUY: jelaskan struktur trend (kuat/lemah), posisi harga vs MA
+2. Jika SELL: jelaskan tekanan bearish dan kelemahan
+3. Jika HOLD dengan BULLISH BIAS: jelaskan:
+   - "konsolidasi dalam uptrend" atau "pullback dalam trend bullish"
+   - posisi harga vs MA50
+   - volume sebagai konfirmasi
+4. WAJIB gunakan angka real untuk skenario:
+   - BUY jika breakout di atas {breakout_with_buffer} (+buffer dari {resistance_fmt})
+   - SELL jika breakdown di bawah {breakdown_with_buffer} (-buffer dari {support_fmt})
+5. Sentimen hanya pelengkap, bukan faktor utama
 3. Jika SELL: WAJIB sebutkan alasan utama dan tambahkan "meskipun ada risiko X, sinyal utama tetap SELL"
 4. Jika HOLD: WAJIB gunakan level S/R sebagai acuan utama:
    - "Breakout di atas {breakout_fmt} (±2% dari {resistance_fmt}) → potensi BUY"
