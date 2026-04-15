@@ -954,20 +954,22 @@ SKOR: {total_skor}
 VOLUME CONFIRMATION: {volume_confirm}
 
 PEDOMAN:
-1. Jika BUY/SELL: wajib nada PASTI, jelaskan kenapa entry meski ada risiko
-2. Jika HOLD: WAJIB sebutkan level angka:
+1. Jika BUY: WAJIB sebutkan alasan utama (trend atau momentum), format: "trend bullish menjadi faktor dominan..." atau "momentum naik didukung..."
+2. Jika BUY: WAJIB tambahkan "meskipun ada risiko X, sinyal utama tetap BUY"
+3. Jika SELL: WAJIB sebutkan alasan utama dan tambahkan "meskipun ada risiko X, sinyal utama tetap SELL"
+4. Jika HOLD: WAJIB sebutkan level angka:
    - "Breakout di atas {resistance_fmt} → potensi BUY"
    - "Breakdown di bawah {support_fmt} → potensi SELL"
-3. Jika volume tinggi + trend bearish → WAJIB tulis: "volume tinggi mengkonfirmasi tekanan jual"
-4. Jika volume tinggi + trend bullish → WAJIB tulis: "volume tinggi mengkonfirmasi kenaikan"
-5. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
-4. DILARANG kalimat umum tanpa angka
+5. Jika volume tinggi + trend bearish → WAJIB tulis: "volume tinggi mengkonfirmasi tekanan jual"
+6. Jika volume tinggi + trend bullish → WAJIB tulis: "volume tinggi mengkonfirmasi kenaikan"
+7. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
+8. DILARANG kalimat umum tanpa angka
 
 CONTOH OUTPUT BUY:
-"Trend naik didukung volume tinggi. Entry sekarang dengan SL ketat."
+"Trend bullish menjadi faktor dominan dengan volume tinggi. Meskipun ada risiko koreksi minor, sinyal utama tetap BUY."
 
 CONTOH OUTPUT SELL:
-"Tekanan jual dominan. Potensi lanjut turun."
+"Trend bearish menjadi faktor dominan dengan tekanan jual. Meskipun ada potensi bounce, sinyal utama tetap SELL."
 
 CONTOH OUTPUT HOLD WAJIB ANGKA:
 "Breakout di atas {resistance_fmt} → potensi BUY. Breakdown di bawah {support_fmt} → potensi SELL."
@@ -984,15 +986,15 @@ Jawab maksimal 2 kalimat."""
     except Exception as e:
         # Fallback reason based on signal
         if is_buy:
-            base = f"Signal BUY dengan skor {total_skor}."
+            base = f"Trend bullish menjadi faktor dominan."
             if volume_confirm:
-                base = f"Signal BUY. {volume_confirm}."
-            return f"{base} Entry dengan risk management ketat."
+                base = f"Trend bullish menjadi faktor dominan. {volume_confirm}."
+            return f"{base} Meskipun ada risiko koreksi minor, sinyal utama tetap BUY."
         elif is_sell:
-            base = f"Signal SELL dengan skor {total_skor}."
+            base = f"Trend bearish menjadi faktor dominan."
             if volume_confirm:
-                base = f"Signal SELL. {volume_confirm}."
-            return base
+                base = f"Trend bearish menjadi faktor dominan. {volume_confirm}."
+            return f"{base} Meskipun ada potensi bounce, sinyal utama tetap SELL."
         else:
             return f"Breakout di atas {resistance_fmt} → potensi BUY. Breakdown di bawah {support_fmt} → potensi SELL."
 
