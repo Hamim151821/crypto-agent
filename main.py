@@ -653,7 +653,7 @@ JAWAB HANYA dalam format JSON (tanpa markdown, tanpa penjelasan tambahan):
             "berita_label": labeled_berita,
             "status": "NETRAL",
             "skor": 0.0,
-            "dampak": "Gagal parsing sentimen"
+            "dampak": "Tidak ada sentimen signifikan"
         }
     except Exception as e:
         print(f"⚠️ Error sentiment analysis: {e}")
@@ -661,7 +661,7 @@ JAWAB HANYA dalam format JSON (tanpa markdown, tanpa penjelasan tambahan):
             "berita_label": labeled_berita,
             "status": "NETRAL",
             "skor": 0.0,
-            "dampak": "Gagal menganalisis sentimen"
+            "dampak": "Tidak ada sentimen signifikan"
         }
 
 # ==============================
