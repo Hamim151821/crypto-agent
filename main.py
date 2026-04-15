@@ -885,38 +885,71 @@ def calculate_position_size(modal, entry, sl, sinyal, market_condition="TRENDING
 # ==============================
 def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition):
     """
-    Minta AI menjelaskan ALASAN di balik sinyal.
-    Maksimal 2 kalimat, fokus ke konflik dan mengapa entry/tidak entry.
-    DILARANG: Mengulang data indikator
+    Alasan WAJIB:
+    - Sesuai data yang ditampilkan
+    - Jika konflik, sebutkan konflik sebenarnya
+    - Jika HOLD, kasih trigger actionable
+    - Jika BUY/SELL, nada pasti
     """
     rsi_status = indikator.get("rsi_status", "N/A")
     macd_status = indikator.get("macd_status", "N/A")
     trend_status = indikator.get("trend_status", "N/A")
     vol_status = indikator.get("volume_status", "N/A")
+    sent_status = sentimen.get("status", "NETRAL")
     
-    # Deteksi konflik
-    conflict = ""
-    if "BULLISH" in macd_status and "BEARISH" in rsi_status:
-        conflict = "RSI overbought tapi MACD bullish"
-    elif "BEARISH" in macd_status and "OVERSOLD" in rsi_status:
-        conflict = "RSI oversold tapi MACD bearish"
-    elif "BULLISH" in trend_status and "BEARISH" in macd_status:
-        conflict = "Trend naik tapi MACD turun"
+    # === DETEKSI KONFLIK ===
+    conflicts = []
+    
+    # Trend vs Indikator
+    if "BULLISH" in trend_status and "BEARISH" in macd_status:
+        conflicts.append("trend naik tapi MACD turun")
     elif "BEARISH" in trend_status and "BULLISH" in macd_status:
-        conflict = "Trend turun tapi MACD naik"
+        conflicts.append("trend turun tapi MACD naik")
+    
+    # RSI vs MACD
+    if "OVERSOLD" in rsi_status and "BEARISH" in macd_status:
+        conflicts.append("RSI oversold tapi MACD bearish")
+    elif "OVERBOUGHT" in rsi_status and "BULLISH" in macd_status:
+        conflicts.append("RSI overbought tapi MACD bullish")
+    
+    # Volume
+    if vol_status == "RENDAH":
+        conflicts.append("volume rendah")
+    
+    # Sentimen
+    if sent_status == "NETRAL":
+        conflicts.append("sentimen netral/tidak ada berita")
+    
+    conflict_text = "; ".join(conflicts) if conflicts else "tidak ada konflik"
+    
+    # === GENERATE REASON BERDASARKAN SINYAL ===
+    is_buy = "BUY" in sinyal
+    is_sell = "SELL" in sinyal
+    is_hold = sinyal == "HOLD"
+    is_strong = "STRONG" in sinyal
     
     prompt = f"""Kamu adalah AI Trading Analyst profesional. Berikan ALASAN SINGKAT (maksimal 2 kalimat) dalam Bahasa Indonesia.
 
-KONFLIK TERDETEKSI: {conflict}
-Sinyal: {sinyal}
-Skor: {total_skor}
+KONFLIK: {conflict_text}
+SINYAL: {sinyal}
+SKOR: {total_skor}
 
-Fokus ke:
-1. Konflik yang ada (bullish vs bearish)
-2. Mengapa tidak entry / mengapa entry
-3. Risiko utama
+PEDOMAN:
+1. Jika BUY/SELL: wajibNada PASTI, jelaskan kenapa entry meski ada risiko
+2. Jika HOLD: wajib kasih TRIGGER actionable (Contoh: "Tunggu breakout resistance..." atau "Tunggu breakdown support...")
+3. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
+4. Sesuaikan nada: BUY/SELL = yakin, HOLD = tunggu trigger
 
-Jawab maksimal 2 kalimat saja. Tidak boleh mengulang data indikator."""
+CONTOH OUTPUT BUY:
+"Trend naik didukung volume tinggi. Entry sekarang dengan SL ketat."
+
+CONTOH OUTPUT SELL:
+"Tekanan jual dominan di trend下降. Potensi lanjut turun."
+
+CONTOH OUTPUT HOLD:
+"Tunggu breakout resistance {indikator.get('resistance', 'N/A')} untuk konfirmasi BUY. Atau tunggu breakdown support {indikator.get('support', 'N/A')} untuk SELL."
+
+Jawab maksimal 2 kalimat."""
     
     try:
         response = client.chat.completions.create(
@@ -926,7 +959,13 @@ Jawab maksimal 2 kalimat saja. Tidak boleh mengulang data indikator."""
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        return f"Konflik: {conflict}. {sinyal} karena skor {total_skor}."
+        # Fallback reason based on signal
+        if is_buy:
+            return f"Signal BUY dengan skor {total_skor}. Konflik: {conflict_text}. Entry dengan risk management ketat."
+        elif is_sell:
+            return f"Signal SELL dengan skor {total_skor}. Konflik: {conflict_text}. Tekanan jual terlihat."
+        else:
+            return f"Tunggu trigger: breakout resistance untuk BUY, breakdown support untuk SELL."
 
 # ==============================
 # FORMAT OUTPUT
