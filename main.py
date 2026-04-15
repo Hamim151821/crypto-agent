@@ -1003,10 +1003,12 @@ PEDOMAN:
    - Dekat support → potensi rebound
    - Dekat resistance → potensi rejection
    - Di tengah range → no trade zone
-9. Jika HOLD: WAJIB jelaskan kondisi saat ini DAN strategi:
-   - Jelaskan posisi harga sekarang (di tengah range, dekat support, dekat resistance)
-   - Format: "Saat ini harga berada di area {posisi} → belum ideal untuk entry"
-   - Tambahkan strategi: "Tunggu di {level} | Entry saat {kondisi}"
+9. Jika HOLD: WAJIB jelaskan ALASAN SPESIFIK mengapa tidak entry:
+   - Jika volume rendah → "volume rendah → konfirmasi belum memadai"
+   - Jika tidak ada konfirmasi breakout → "belum ada konfirmasi breakout"
+   - Jika RR tidak menarik → "risk/reward tidak memadai"
+   - Jika harga di tengah range → "harga di tengah range → no trade zone"
+   - Format: "HOLD karena [alasan spesifik]. Kondisi saat ini: {posisi}. Strategi: tunggu di {level}"
 10. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
 11. DILARANG menentukan level jauh dari S/R
 
