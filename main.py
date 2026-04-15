@@ -754,21 +754,21 @@ def calculate_score(indikator, sentimen, weights, market_condition):
         scores["sentimen"] = 0
     
     # === TREND DOMINANCE RULE ===
-    # Jika TRENDING DOWN + volume tinggi → kurangi sinyal bullish kecil
+    # Jika indikator melawan trend dengan volume tinggi → kurangi skor -1
     is_trending_down = market_condition.startswith("TRENDING DOWN")
     is_trending_up = market_condition.startswith("TRENDING UP")
     
     if is_trending_down and volume_status == "TINGGI":
         if scores["macd"] == 2:  # Bullish tapi trend turun
-            scores["macd"] = 0
+            scores["macd"] = max(0, scores["macd"] - 1)
         if scores["rsi"] == 2:   # Oversold tapi trend turun
-            scores["rsi"] = 0
+            scores["rsi"] = max(0, scores["rsi"] - 1)
     
     if is_trending_up and volume_status == "TINGGI":
         if scores["macd"] == -2:  # Bearish tapi trend naik
-            scores["macd"] = 0
+            scores["macd"] = min(0, scores["macd"] + 1)
         if scores["rsi"] == -2:  # Overbought tapi trend naik
-            scores["rsi"] = 0
+            scores["rsi"] = min(0, scores["rsi"] + 1)
     
     # === APPLY ADAPTIVE WEIGHTS ===
     total = 0.0
@@ -969,6 +969,17 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
     if no_trade:
         no_trade_warning = "\n⛔ NO TRADE ZONE: Sideways + Volume lemah + Konflik indikator → Hindari entry!"
 
+    # HOLD dengan bias
+    if sinyal == "HOLD":
+        if total_skor > 0:
+            sinyal_display = "HOLD (Bullish Bias)"
+        elif total_skor < 0:
+            sinyal_display = "HOLD (Bearish Bias)"
+        else:
+            sinyal_display = "HOLD"
+    else:
+        sinyal_display = sinyal
+
     # PRIORITAS UTAMA: Jika HOLD, wajib "-" semua
     if sinyal == "HOLD":
         entry_display = "-"
@@ -1007,7 +1018,7 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
 • Skor: {sentimen.get('skor', 0)}
 • Dampak: {sentimen.get('dampak', 'N/A')}
 
-🎯 Sinyal: {sinyal}
+🎯 Sinyal: {sinyal_display}
 📊 Skor: {'+' if total_skor > 0 else ''}{total_skor}
 🔥 Confidence: {confidence:.0f}%{no_trade_warning}{weights_note}
 
