@@ -950,7 +950,7 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     if is_vol_tinggi and is_bearish_trend:
         volume_confirm = "volume tinggi mengkonfirmasi tekanan jual"
     elif is_vol_tinggi and is_bullish_trend:
-        volume_confirm = "volume tinggi mengkonfirmasi kenaikan"
+        volume_confirm = "volume tinggi mengkonfirmasi kekuatan tren naik"
     
     prompt = f"""Kamu adalah AI Trading Analyst profesional. Berikan ALASAN SINGKAT (maksimal 2 kalimat) dalam Bahasa Indonesia.
 
@@ -967,7 +967,7 @@ PEDOMAN:
    - "Breakout di atas {breakout_fmt} (±2% dari {resistance_fmt}) → potensi BUY"
    - "Breakdown di bawah {breakdown_fmt} (±2% dari {support_fmt}) → potensi SELL"
 5. Jika volume tinggi + trend bearish → WAJIB tulis: "volume tinggi mengkonfirmasi tekanan jual"
-6. Jika volume tinggi + trend bullish → WAJIB tulis: "volume tinggi mengkonfirmasi kenaikan"
+6. Jika volume tinggi + trend bullish → WAJIB tulis: "volume tinggi mengkonfirmasi kekuatan tren naik"
 7. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
 8. DILARANG menentukan level jauh dari S/R
 
