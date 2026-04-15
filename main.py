@@ -995,15 +995,23 @@ PEDOMAN:
 8. WAJIB sebutkan posisi harga terhadap S/R dalam alasan:
    - Dekat support → potensi rebound
    - Dekat resistance → potensi rejection
-   - Di tengah range → no trade zone
+   - Di tengah range → WAJIB disebut "area range" atau "area konsolidasi"
 9. Jika HOLD: WAJIB jelaskan ALASAN SPESIFIK mengapa tidak entry:
+   - WAJIB menyebut MINIMAL 2 faktor utama (trend + momentum + volume)
    - Jika volume rendah → "volume rendah → konfirmasi belum memadai"
    - Jika tidak ada konfirmasi → "belum ada konfirmasi breakout"
    - Jika RR tidak menarik → "risk/reward tidak memadai"
-   - Jika harga di tengah range → "harga di tengah range → no trade zone"
-   - Format: "HOLD karena [alasan spesifik]. Kondisi saat ini: {posisi_harga}. Strategi: tunggu di {breakout_fmt} untuk BUY atau {breakdown_fmt} untuk SELL"
-10. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
-11. DILARANG menentukan level jauh dari S/R
+   - Jika harga di tengah range → "harga di area konsolidasi → no trade zone"
+   - WAJIB gunakan format: "HOLD karena [faktor1] dan [faktor2]. Kondisi: {posisi_harga}. Strategi: tunggu konfirmasi breakout atau breakdown"
+10. WAJIB ADA TRADING SCENARIO untuk HOLD:
+    Format wajib:
+    "Skenario:
+    • BUY jika breakout {resistance_fmt} + volume meningkat
+    • SELL jika breakdown {support_fmt} + volume meningkat
+    • Selain itu: tetap HOLD"
+11. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
+12. Hindari bahasa lemah seperti "tunggu area jelas" → gunakan "menunggu konfirmasi breakout atau breakdown"
+13. DILARANG menentukan level jauh dari S/R
 
 CONTOH OUTPUT BUY:
 "Trend bullish menjadi faktor dominan dengan volume tinggi. Meskipun ada risiko koreksi minor, sinyal utama tetap BUY."
@@ -1011,10 +1019,10 @@ CONTOH OUTPUT BUY:
 CONTOH OUTPUT SELL:
 "Trend bearish menjadi faktor dominan dengan tekanan jual. Meskipun ada potensi bounce, sinyal utama tetap SELL."
 
-CONTOH OUTPUT HOLD WAJIB KONDISI & STRATEGI:
-"Saat ini harga berada di tengah range antara {support_fmt} dan {resistance_fmt} → belum ideal untuk entry. Tunggu di {breakout_fmt} untuk BUY | atau di {breakdown_fmt} untuk SELL."
+CONTOH OUTPUT HOLD KOMPREHENSIF:
+"HOLD karena trend bearish dan volume rendah (konfirmasi belum memadai). Kondisi: harga di area konsolidasi antara {support_fmt} dan {resistance_fmt}. Skenario: BUY jika breakout {resistance_fmt} + volume meningkat, SELL jika breakdown {support_fmt} + volume meningkat, selain itu tetap HOLD."
 
-Jawab maksimal 2 kalimat."""
+Jawab maksimal 2 kalimat (tapi skenario wajib dicantumkan dalam format yang jelas)."""
     
     try:
         response = client.chat.completions.create(
@@ -1036,7 +1044,8 @@ Jawab maksimal 2 kalimat."""
                 base = f"Trend bearish menjadi faktor dominan. {volume_confirm}."
             return f"{base} Meskipun ada potensi bounce, sinyal utama tetap SELL."
         else:
-            return f"Breakout di atas {breakout_fmt} (±2% dari resistance {resistance_fmt}) → potensi BUY. Breakdown di bawah {breakdown_fmt} (±2% dari support {support_fmt}) → potensi SELL."
+            # HOLD dengan format baru
+            return f"HOLD karena harga di area konsolidasi ({support_fmt} - {resistance_fmt}). Skenario: BUY jika breakout {resistance_fmt} + volume meningkat, SELL jika breakdown {support_fmt} + volume meningkat, selain itu tetap HOLD."
 
 # ==============================
 # FORMAT OUTPUT
