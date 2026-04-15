@@ -848,7 +848,8 @@ def calculate_position_size(modal, entry, sl, sinyal, market_condition="TRENDING
         return 0
     
     # Risk per trade: 1% normal, 0.5% kalau volatile
-    risk_pct = 0.005 if market_condition == "VOLATILE" else 0.01
+    is_volatile = "VOLATILE" in market_condition
+    risk_pct = 0.005 if is_volatile else 0.01
     
     # Konversi modal ke mata uang yang sama dengan entry
     if currency == "USD":
@@ -978,7 +979,8 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
         copy_trade_status = "NO TRADE"
         position_size_display = "-"
     else:
-        copy_trade_status = "OPEN" if sinyal != "HOLD" else "-"
+        is_trade = "BUY" in sinyal or "SELL" in sinyal
+        copy_trade_status = "OPEN" if is_trade else "-"
         position_size_display = f"{position_size:,.6f}"
     
     # Format berita dengan label
@@ -1068,11 +1070,15 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     # 5. Calculate Scores (deterministik)
     skor_detail, total_skor = calculate_score(indikator, sentimen, weights, market_condition)
     
-    # 6. Determine Signal
-    if total_skor >= 5:
-        sinyal = "BELI"
-    elif total_skor <= -5:
-        sinyal = "JUAL"
+    # 6. Determine Signal (FLEKSIBEL)
+    if total_skor >= 6:
+        sinyal = "STRONG BUY"
+    elif total_skor >= 3:
+        sinyal = "BUY (WEAK)"
+    elif total_skor <= -6:
+        sinyal = "STRONG SELL"
+    elif total_skor <= -3:
+        sinyal = "SELL (WEAK)"
     else:
         sinyal = "HOLD"
     
@@ -1080,20 +1086,25 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     confidence = min(abs(total_skor) / 10 * 100, 100)
     if total_skor == 0:
         confidence = 50
-    # HOLD should have 40-60% confidence
+    # Confidence based on signal type
     if sinyal == "HOLD":
-        confidence = min(max(confidence, 40), 60)
-    if confidence < 60:
+        confidence = min(max(confidence, 45), 55)
+    elif "WEAK" in sinyal:
+        confidence = min(max(confidence, 50), 65)
+    elif "STRONG" in sinyal:
+        confidence = min(max(confidence, 65), 90)
+    if confidence < 60 and sinyal not in ["HOLD", "BUY (WEAK)", "SELL (WEAK)"]:
+        pass  # Keep STRONG signals
+    elif confidence < 50:
         sinyal = "HOLD"
     
     # Jika volume sangat rendah, turunkan confidence
     vol_status = indikator.get("volume_status", "NORMAL")
-    if vol_status == "RENDAH" and sinyal != "HOLD":
+    is_trade_signal = "BUY" in sinyal or "SELL" in sinyal
+    if vol_status == "RENDAH" and is_trade_signal:
         confidence = max(30, confidence - 15)
-    
-    # Cek ulang confidence setelah volume adjustment
-    if confidence < 60:
-        sinyal = "HOLD"
+        if confidence < 50:
+            sinyal = "HOLD"
     
     # 8. No-Trade Zone Check
     no_trade = detect_no_trade_zone(indikator, skor_detail)
@@ -1119,13 +1130,15 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     # Risk Level based on conditions
     is_volatile = "VOLATILE" in market_condition
     is_strong_trend = market_condition.startswith("TRENDING UP") or market_condition.startswith("TRENDING DOWN")
+    vol_status = indikator.get("volume_status", "NORMAL")
+    is_volume_rendah = vol_status == "RENDAH"
     
     if sinyal == "HOLD":
         risk_level = "LOW"
-    elif is_volatile:
-        risk_level = "HIGH"
-    elif is_strong_trend and confidence >= 70:
+    elif is_strong_trend and not is_volatile:
         risk_level = "MEDIUM"
+    elif is_volume_rendah:
+        risk_level = "MEDIUM-HIGH"
     else:
         risk_level = "HIGH"
     
