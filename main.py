@@ -935,18 +935,32 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     support_fmt = fmt_price(support, curr)
     resistance_fmt = fmt_price(resistance, curr)
     
+    # Volume + Trend confirmation text
+    is_vol_tinggi = vol_status == "TINGGI"
+    is_bearish_trend = "TRENDING DOWN" in market_condition
+    is_bullish_trend = "TRENDING UP" in market_condition
+    
+    volume_confirm = ""
+    if is_vol_tinggi and is_bearish_trend:
+        volume_confirm = "volume tinggi mengkonfirmasi tekanan jual"
+    elif is_vol_tinggi and is_bullish_trend:
+        volume_confirm = "volume tinggi mengkonfirmasi kenaikan"
+    
     prompt = f"""Kamu adalah AI Trading Analyst profesional. Berikan ALASAN SINGKAT (maksimal 2 kalimat) dalam Bahasa Indonesia.
 
 KONFLIK: {conflict_text}
 SINYAL: {sinyal}
 SKOR: {total_skor}
+VOLUME CONFIRMATION: {volume_confirm}
 
 PEDOMAN:
 1. Jika BUY/SELL: wajib nada PASTI, jelaskan kenapa entry meski ada risiko
 2. Jika HOLD: WAJIB sebutkan level angka:
    - "Breakout di atas {resistance_fmt} → potensi BUY"
    - "Breakdown di bawah {support_fmt} → potensi SELL"
-3. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
+3. Jika volume tinggi + trend bearish → WAJIB tulis: "volume tinggi mengkonfirmasi tekanan jual"
+4. Jika volume tinggi + trend bullish → WAJIB tulis: "volume tinggi mengkonfirmasi kenaikan"
+5. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
 4. DILARANG kalimat umum tanpa angka
 
 CONTOH OUTPUT BUY:
@@ -970,9 +984,15 @@ Jawab maksimal 2 kalimat."""
     except Exception as e:
         # Fallback reason based on signal
         if is_buy:
-            return f"Signal BUY dengan skor {total_skor}. Konflik: {conflict_text}. Entry dengan risk management ketat."
+            base = f"Signal BUY dengan skor {total_skor}."
+            if volume_confirm:
+                base = f"Signal BUY. {volume_confirm}."
+            return f"{base} Entry dengan risk management ketat."
         elif is_sell:
-            return f"Signal SELL dengan skor {total_skor}. Konflik: {conflict_text}. Tekanan jual terlihat."
+            base = f"Signal SELL dengan skor {total_skor}."
+            if volume_confirm:
+                base = f"Signal SELL. {volume_confirm}."
+            return base
         else:
             return f"Breakout di atas {resistance_fmt} → potensi BUY. Breakdown di bawah {support_fmt} → potensi SELL."
 
