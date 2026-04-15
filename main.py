@@ -897,30 +897,30 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     vol_status = indikator.get("volume_status", "N/A")
     sent_status = sentimen.get("status", "NETRAL")
     
-    # === DETEKSI KONFLIK ===
+    # === DETEKSI KONFLIK (PROFESIONAL) ===
     conflicts = []
     
-    # Trend vs Indikator
+    # Trend vs Indikator - format profesional
     if "BULLISH" in trend_status and "BEARISH" in macd_status:
-        conflicts.append("trend naik tapi MACD turun")
+        conflicts.append("terjadi konflik antara momentum jangka pendek (MACD) dan trend utama (MA)")
     elif "BEARISH" in trend_status and "BULLISH" in macd_status:
-        conflicts.append("trend turun tapi MACD naik")
+        conflicts.append("terjadi konflik antara momentum jangka pendek (MACD) dan trend utama (MA)")
     
-    # RSI vs MACD
+    # RSI vs MACD - format profesional
     if "OVERSOLD" in rsi_status and "BEARISH" in macd_status:
-        conflicts.append("RSI oversold tapi MACD bearish")
+        conflicts.append("terjadi konflik antara RSI (oversold) dan momentum (MACD)")
     elif "OVERBOUGHT" in rsi_status and "BULLISH" in macd_status:
-        conflicts.append("RSI overbought tapi MACD bullish")
+        conflicts.append("terjadi konflik antara RSI (overbought) dan momentum (MACD)")
     
-    # Volume
+    # Volume rendah - format profesional
     if vol_status == "RENDAH":
-        conflicts.append("volume rendah")
+        conflicts.append("volume rendah mengurangi kekuatan sinyal")
     
-    # Sentimen
+    # Sentimen netral - format profesional
     if sent_status == "NETRAL":
-        conflicts.append("sentimen netral/tidak ada berita")
+        conflicts.append("sentimen netral tidak memberikan dukungan")
     
-    conflict_text = "; ".join(conflicts) if conflicts else "tidak ada konflik"
+    conflict_text = "; ".join(conflicts) if conflicts else "tidak ada konflik signifikan"
     
     # === GENERATE REASON BERDASARKAN SINYAL ===
     is_buy = "BUY" in sinyal
