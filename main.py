@@ -1038,6 +1038,8 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     
     # 7. Confidence
     confidence = min(abs(total_skor) / 10 * 100, 100)
+    if total_skor == 0:
+        confidence = 50
     if confidence < 60:
         sinyal = "HOLD"
     
