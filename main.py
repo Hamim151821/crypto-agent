@@ -902,15 +902,15 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     
     # Trend vs Indikator - format profesional
     if "BULLISH" in trend_status and "BEARISH" in macd_status:
-        conflicts.append("terjadi konflik antara momentum jangka pendek (MACD) dan trend utama (MA)")
+        conflicts.append("terjadi konflik antara momentum jangka pendek (MACD) dan trend utama (MA), sehingga arah belum terkonfirmasi")
     elif "BEARISH" in trend_status and "BULLISH" in macd_status:
-        conflicts.append("terjadi konflik antara momentum jangka pendek (MACD) dan trend utama (MA)")
+        conflicts.append("terjadi konflik antara momentum jangka pendek (MACD) dan trend utama (MA), sehingga arah belum terkonfirmasi")
     
     # RSI vs MACD - format profesional
     if "OVERSOLD" in rsi_status and "BEARISH" in macd_status:
-        conflicts.append("terjadi konflik antara RSI (oversold) dan momentum (MACD)")
+        conflicts.append("terjadi konflik antara RSI (oversold) dan momentum (MACD), sehingga arah belum terkonfirmasi")
     elif "OVERBOUGHT" in rsi_status and "BULLISH" in macd_status:
-        conflicts.append("terjadi konflik antara RSI (overbought) dan momentum (MACD)")
+        conflicts.append("terjadi konflik antara RSI (overbought) dan momentum (MACD), sehingga arah belum terkonfirmasi")
     
     # Volume rendah - format profesional
     if vol_status == "RENDAH":
