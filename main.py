@@ -1005,10 +1005,10 @@ PEDOMAN:
    - Di tengah range → no trade zone
 9. Jika HOLD: WAJIB jelaskan ALASAN SPESIFIK mengapa tidak entry:
    - Jika volume rendah → "volume rendah → konfirmasi belum memadai"
-   - Jika tidak ada konfirmasi breakout → "belum ada konfirmasi breakout"
+   - Jika tidak ada konfirmasi → "belum ada konfirmasi breakout"
    - Jika RR tidak menarik → "risk/reward tidak memadai"
    - Jika harga di tengah range → "harga di tengah range → no trade zone"
-   - Format: "HOLD karena [alasan spesifik]. Kondisi saat ini: {posisi}. Strategi: tunggu di {level}"
+   - Format: "HOLD karena [alasan spesifik]. Kondisi saat ini: {posisi_harga}. Strategi: tunggu di {breakout_fmt} untuk BUY atau {breakdown_fmt} untuk SELL"
 10. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
 11. DILARANG menentukan level jauh dari S/R
 
