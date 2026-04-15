@@ -927,6 +927,19 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
     no_trade_warning = ""
     if no_trade:
         no_trade_warning = "\n⛔ NO TRADE ZONE: Sideways + Volume lemah + Konflik indikator → Hindari entry!"
+
+    # PRIORITAS UTAMA: Jika HOLD, wajib "-" semua
+    if sinyal == "HOLD":
+        entry_display = "-"
+        sl_display = "-"
+        tp_display = "-"
+        risk_level = "LOW"
+        rr_ratio = "-"
+        copy_trade_status = "NO TRADE"
+        position_size_display = "-"
+    else:
+        copy_trade_status = "OPEN" if sinyal != "HOLD" else "-"
+        position_size_display = f"{position_size:,.6f}"
     
     # Format berita dengan label
     berita_list = sentimen.get("berita_label", [])
@@ -965,8 +978,8 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
 
 💼 Copy Trade:
 • Modal: Rp {modal:,.0f}
-• Size: {position_size:,.6f}
-• Status: {'OPEN' if sinyal != 'HOLD' else '-'}
+• Size: {position_size_display}
+• Status: {copy_trade_status}
 • P/L: -
 
 🧠 Alasan:
