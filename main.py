@@ -805,26 +805,37 @@ def calculate_entry_sl_tp(harga, sinyal, indikator):
     """
     Hitung Entry, Stop Loss, dan Take Profit
     SL: 2-5% | TP: Risk:Reward >= 1:2
+    
+    LOGIKA BUY vs SELL (WAJIB):
+    - BUY: TP > Entry > SL
+    - SELL: SL > Entry > TP
     """
     support = indikator.get("support", harga * 0.97)
     resistance = indikator.get("resistance", harga * 1.03)
     market_condition = indikator.get("market_condition", "TRENDING")
     
     # SL percentage: volatile → lebih besar
-    sl_pct = 0.05 if market_condition == "VOLATILE" else 0.03
+    is_volatile = "VOLATILE" in market_condition
+    sl_pct = 0.05 if is_volatile else 0.03
     
-    if sinyal == "BELI":
+    is_buy = "BUY" in sinyal
+    is_sell = "SELL" in sinyal
+    
+    if is_buy:
         entry = harga
-        # SL di bawah support atau persentase, ambil yang lebih dekat tapi min 2%
+        # SL harus di bawah Entry
         sl = min(entry * (1 - sl_pct), support * 0.99)
         sl = min(sl, entry * (1 - 0.02))  # Minimal 2% di bawah entry
+        # TP harus di atas Entry
         risk = entry - sl
-        tp = entry + (risk * 2)  # Minimum 1:2 RR
+        tp = entry + (risk * 2)  # Minimal 1:2 RR
         tp = max(tp, resistance)  # Setidaknya sampai resistance
-    elif sinyal == "JUAL":
+    elif is_sell:
         entry = harga
+        # SL harus di atas Entry
         sl = max(entry * (1 + sl_pct), resistance * 1.01)
         sl = max(sl, entry * (1 + 0.02))
+        # TP harus di bawah Entry
         risk = sl - entry
         tp = entry - (risk * 2)
         tp = min(tp, support)
@@ -1154,6 +1165,21 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
             reward_pct = abs(tp - entry) / entry * 100 if is_buy else abs(entry - tp) / entry * 100
     
     rr_ratio = f"1:{reward_pct / risk_pct:.1f}" if risk_pct > 0 else "-"
+    
+    # === VALIDASI OTOMATIS ===
+    # Pastikan arah BUY/SELL benar
+    if is_buy:
+        # BUY: TP > Entry > SL
+        if not (tp > entry and entry > sl):
+            # Perbaiki otomatis
+            sl = entry * 0.98  # 2% di bawah entry
+            tp = entry * 1.06  # 6% di atas entry (RR 1:3)
+    elif is_sell:
+        # SELL: SL > Entry > TP
+        if not (sl > entry and entry > tp):
+            # Perbaiki otomatis
+            sl = entry * 1.02  # 2% di atas entry
+            tp = entry * 0.94  # 6% di bawah entry (RR 1:3)
     
     # Risk Level based on conditions
     is_volatile = "VOLATILE" in market_condition
