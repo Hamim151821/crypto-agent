@@ -928,6 +928,13 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     is_hold = sinyal == "HOLD"
     is_strong = "STRONG" in sinyal
     
+    # Get support/resistance values with proper formatting
+    support = indikator.get("support", 0)
+    resistance = indikator.get("resistance", 0)
+    curr = "USD" if not symbol.endswith(".JK") else "IDR"
+    support_fmt = fmt_price(support, curr)
+    resistance_fmt = fmt_price(resistance, curr)
+    
     prompt = f"""Kamu adalah AI Trading Analyst profesional. Berikan ALASAN SINGKAT (maksimal 2 kalimat) dalam Bahasa Indonesia.
 
 KONFLIK: {conflict_text}
@@ -935,19 +942,21 @@ SINYAL: {sinyal}
 SKOR: {total_skor}
 
 PEDOMAN:
-1. Jika BUY/SELL: wajibNada PASTI, jelaskan kenapa entry meski ada risiko
-2. Jika HOLD: wajib kasih TRIGGER actionable (Contoh: "Tunggu breakout resistance..." atau "Tunggu breakdown support...")
+1. Jika BUY/SELL: wajib nada PASTI, jelaskan kenapa entry meski ada risiko
+2. Jika HOLD: WAJIB sebutkan level angka:
+   - "Breakout di atas {resistance_fmt} → potensi BUY"
+   - "Breakdown di bawah {support_fmt} → potensi SELL"
 3. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
-4. Sesuaikan nada: BUY/SELL = yakin, HOLD = tunggu trigger
+4. DILARANG kalimat umum tanpa angka
 
 CONTOH OUTPUT BUY:
 "Trend naik didukung volume tinggi. Entry sekarang dengan SL ketat."
 
 CONTOH OUTPUT SELL:
-"Tekanan jual dominan di trend下降. Potensi lanjut turun."
+"Tekanan jual dominan. Potensi lanjut turun."
 
-CONTOH OUTPUT HOLD:
-"Tunggu breakout resistance {indikator.get('resistance', 'N/A')} untuk konfirmasi BUY. Atau tunggu breakdown support {indikator.get('support', 'N/A')} untuk SELL."
+CONTOH OUTPUT HOLD WAJIB ANGKA:
+"Breakout di atas {resistance_fmt} → potensi BUY. Breakdown di bawah {support_fmt} → potensi SELL."
 
 Jawab maksimal 2 kalimat."""
     
@@ -965,7 +974,7 @@ Jawab maksimal 2 kalimat."""
         elif is_sell:
             return f"Signal SELL dengan skor {total_skor}. Konflik: {conflict_text}. Tekanan jual terlihat."
         else:
-            return f"Tunggu trigger: breakout resistance untuk BUY, breakdown support untuk SELL."
+            return f"Breakout di atas {resistance_fmt} → potensi BUY. Breakdown di bawah {support_fmt} → potensi SELL."
 
 # ==============================
 # FORMAT OUTPUT
