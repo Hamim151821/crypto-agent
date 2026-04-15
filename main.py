@@ -1239,6 +1239,10 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     if not has_news:
         confidence = max(20, confidence - 5)
     
+    # Volume rendah DAN tidak ada berita → -10%
+    if vol_rendah and not has_news:
+        confidence = max(20, confidence - 10)
+    
     # DILARANG confidence < 20%
     if confidence < 20:
         confidence = 20
