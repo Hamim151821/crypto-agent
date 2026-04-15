@@ -957,6 +957,7 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
 KONFLIK: {conflict_text}
 SINYAL: {sinyal}
 SKOR: {total_skor}
+SENTIMEN: {sent_status}
 VOLUME CONFIRMATION: {volume_confirm}
 
 PEDOMAN:
@@ -968,8 +969,12 @@ PEDOMAN:
    - "Breakdown di bawah {breakdown_fmt} (±2% dari {support_fmt}) → potensi SELL"
 5. Jika volume tinggi + trend bearish → WAJIB tulis: "volume tinggi mengkonfirmasi tekanan jual"
 6. Jika volume tinggi + trend bullish → WAJIB tulis: "volume tinggi mengkonfirmasi kekuatan tren naik"
-7. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
-8. DILARANG menentukan level jauh dari S/R
+7. VALIDASI SENTIMEN:
+   - DILARANG: Menyebut "didukung sentimen" jika sentimen NETRAL
+   - DILARANG: Menyebut faktor yang tidak ada di data
+   - WAJIB: Jika netral → tulis "tanpa dukungan sentimen kuat"
+8. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
+9. DILARANG menentukan level jauh dari S/R
 
 CONTOH OUTPUT BUY:
 "Trend bullish menjadi faktor dominan dengan volume tinggi. Meskipun ada risiko koreksi minor, sinyal utama tetap BUY."
