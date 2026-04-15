@@ -1234,26 +1234,30 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     is_bearish = total_skor < 0
     is_bullish = total_skor > 0
     
-    # 6. KONSISTENSI SINYAL BERDASARKAN SKOR (WAJIB - QUANTITATIVE)
-    # Interpretasi skor:
-    # ≥ +4 → Bullish kuat → BUY
-    # +1 sampai +3 → Bullish lemah → BUY (WEAK) atau HOLD
-    # 0 → Netral → HOLD
-    # -1 sampai -3 → Bearish lemah → SELL (WEAK) atau HOLD
-    # ≤ -4 → Bearish kuat → SELL
+    # 6. VOLUME ADJUSTMENT - JIKA VOLUME RENDAH: HOLD atau WAIT CONFIRMATION
+    # Volume < 1.0 = sinyal lemah = DILARANG entry agresif
+    # Default: HOLD
     
     if total_skor >= 4:
-        sinyal = "BUY"
+        # Strong signal tapi volume rendah → WAIT CONFIRMATION
+        if vol_rendah:
+            sinyal = "HOLD"
+        else:
+            sinyal = "BUY"
     elif total_skor >= 1:
-        # Jika volume rendah → downgrade ke HOLD
+        # Lemah signal + volume rendah = HOLD
         if vol_rendah:
             sinyal = "HOLD"
         else:
             sinyal = "BUY (WEAK)"
     elif total_skor <= -4:
-        sinyal = "SELL"
+        # Strong signal tapi volume rendah → WAIT CONFIRMATION
+        if vol_rendah:
+            sinyal = "HOLD"
+        else:
+            sinyal = "SELL"
     elif total_skor <= -1:
-        # Jika volume rendah → downgrade ke HOLD
+        # Lemah signal + volume rendah = HOLD
         if vol_rendah:
             sinyal = "HOLD"
         else:
