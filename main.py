@@ -983,8 +983,12 @@ PEDOMAN:
    - DILARANG: Menyebut "didukung sentimen" jika sentimen NETRAL
    - DILARANG: Menyebut faktor yang tidak ada di data
    - WAJIB: Jika netral → tulis "tanpa dukungan sentimen kuat"
-8. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
-9. DILARANG menentukan level jauh dari S/R
+8. Jika HOLD: WAJIB jelaskan kondisi saat ini DAN strategi:
+   - Jelaskan posisi harga sekarang (di tengah range, dekat support, dekat resistance)
+   - Format: "Saat ini harga berada di area {posisi} → belum ideal untuk entry"
+   - Tambahkan strategi: "Tunggu di {level} | Entry saat {kondisi}"
+9. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
+10. DILARANG menentukan level jauh dari S/R
 
 CONTOH OUTPUT BUY:
 "Trend bullish menjadi faktor dominan dengan volume tinggi. Meskipun ada risiko koreksi minor, sinyal utama tetap BUY."
@@ -992,8 +996,8 @@ CONTOH OUTPUT BUY:
 CONTOH OUTPUT SELL:
 "Trend bearish menjadi faktor dominan dengan tekanan jual. Meskipun ada potensi bounce, sinyal utama tetap SELL."
 
-CONTOH OUTPUT HOLD WAJIB ANGKA:
-"Breakout di atas {breakout_fmt} (±2% dari resistance {resistance_fmt}) → potensi BUY. Breakdown di bawah {breakdown_fmt} (±2% dari support {support_fmt}) → potensi SELL."
+CONTOH OUTPUT HOLD WAJIB KONDISI & STRATEGI:
+"Saat ini harga berada di tengah range antara {support_fmt} dan {resistance_fmt} → belum ideal untuk entry. Tunggu di {breakout_fmt} untuk BUY | atau di {breakdown_fmt} untuk SELL."
 
 Jawab maksimal 2 kalimat."""
     
