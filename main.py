@@ -626,7 +626,7 @@ def analyze_news(berita, symbol):
         })
     
     # Override dampak jika hanya berita makro
-    makro_override = "Sentimen makro, dampak langsung terbatas" if has_makro_only else None
+    makro_override = "Dampak tidak langsung ke saham" if has_makro_only else None
     
     prompt = f"""Analisis sentimen berita untuk aset {symbol}.
 
@@ -886,22 +886,37 @@ def calculate_position_size(modal, entry, sl, sinyal, market_condition="TRENDING
 def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition):
     """
     Minta AI menjelaskan ALASAN di balik sinyal.
-    Maksimal 2 kalimat, fokus ke trend, konfirmasi, dan risiko.
+    Maksimal 2 kalimat, fokus ke konflik dan mengapa entry/tidak entry.
+    DILARANG: Mengulang data indikator
     """
-    prompt = f"""Kamu adalah AI Trading Analyst profesional. Berikan ALASAN SINGKAT (maksimal 2 kalimat) dalam Bahasa Indonesia mengapa sinyal {sinyal} diberikan untuk {symbol}.
+    rsi_status = indikator.get("rsi_status", "N/A")
+    macd_status = indikator.get("macd_status", "N/A")
+    trend_status = indikator.get("trend_status", "N/A")
+    vol_status = indikator.get("volume_status", "N/A")
+    
+    # Deteksi konflik
+    conflict = ""
+    if "BULLISH" in macd_status and "BEARISH" in rsi_status:
+        conflict = "RSI overbought tapi MACD bullish"
+    elif "BEARISH" in macd_status and "OVERSOLD" in rsi_status:
+        conflict = "RSI oversold tapi MACD bearish"
+    elif "BULLISH" in trend_status and "BEARISH" in macd_status:
+        conflict = "Trend naik tapi MACD turun"
+    elif "BEARISH" in trend_status and "BULLISH" in macd_status:
+        conflict = "Trend turun tapi MACD naik"
+    
+    prompt = f"""Kamu adalah AI Trading Analyst profesional. Berikan ALASAN SINGKAT (maksimal 2 kalimat) dalam Bahasa Indonesia.
 
-Data:
-- Market: {market_condition}
-- Total Skor: {total_skor}
-- Volume: {indikator.get('volume_status', 'N/A')}
-- Tren dominan: {indikator.get('trend_status', 'N/A')}
+KONFLIK TERDETEKSI: {conflict}
+Sinyal: {sinyal}
+Skor: {total_skor}
 
 Fokus ke:
-1. Trend dominan
-2. Konfirmasi (volume/momentum)
+1. Konflik yang ada (bullish vs bearish)
+2. Mengapa tidak entry / mengapa entry
 3. Risiko utama
 
-Jawab maksimal 2 kalimat saja dalam Bahasa Indonesia. Tidak perlu panjang."""
+Jawab maksimal 2 kalimat saja. Tidak boleh mengulang data indikator."""
     
     try:
         response = client.chat.completions.create(
@@ -911,7 +926,7 @@ Jawab maksimal 2 kalimat saja dalam Bahasa Indonesia. Tidak perlu panjang."""
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        return f"Signal {sinyal} dengan skor {total_skor}. Trend {market_condition}."
+        return f"Konflik: {conflict}. {sinyal} karena skor {total_skor}."
 
 # ==============================
 # FORMAT OUTPUT
@@ -1094,37 +1109,32 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     # 5. Calculate Scores (deterministik)
     skor_detail, total_skor = calculate_score(indikator, sentimen, weights, market_condition)
     
-    # 6. Determine Signal (FLEKSIBEL + EDGE CASE)
-    # PRIORITAS: Jika skor sudah masuk kategori, WAJIB ikuti
-    if total_skor >= 6:
+    # 6. KONSISTENSI SINYAL BERDASARKAN SKOR (WAJIB)
+    if total_skor >= 5:
         sinyal = "STRONG BUY"
     elif total_skor >= 3:
         sinyal = "BUY (WEAK)"
-    elif total_skor <= -6:
+    elif total_skor <= -5:
         sinyal = "STRONG SELL"
     elif total_skor <= -3:
         sinyal = "SELL (WEAK)"
     else:
         sinyal = "HOLD"
     
-    # === ANTI OVER-HOLD + EDGE CASE SCORING ===
+    # === LOGIKA VOLUME DIPERTEGAS ===
     is_trending_down = market_condition.startswith("TRENDING DOWN")
     is_trending_up = market_condition.startswith("TRENDING UP")
     vol_tinggi = indikator.get("volume_status") == "TINGGI"
+    vol_rendah = indikator.get("volume_status") == "RENDAH"
+    is_bearish = total_skor < 0
+    is_bullish = total_skor > 0
     
-    if sinyal == "HOLD":
-        # EDGE CASE: skor = -2 + TRENDING DOWN → SELL (WEAK)
-        if is_trending_down and total_skor <= -2:
-            sinyal = "SELL (WEAK)"
-        # EDGE CASE: skor = +4 + TRENDING UP → BUY (WEAK)
-        elif is_trending_up and total_skor >= 3:
-            sinyal = "BUY (WEAK)"
-        # TRENDING DOWN + volume tinggi + skor ≤ -2 → SELL
-        elif is_trending_down and vol_tinggi and total_skor <= -2:
-            sinyal = "SELL (WEAK)"
-        # TRENDING UP + skor ≥ +3 → BUY
-        elif is_trending_up and total_skor >= 3:
-            sinyal = "BUY (WEAK)"
+    # Volume tinggi + bearish → perkuat SELL
+    if vol_tinggi and is_bearish and sinyal == "BUY (WEAK)":
+        sinyal = "SELL (WEAK)"
+    # Volume rendah + bullish → lemah
+    if vol_rendah and is_bullish and sinyal == "STRONG BUY":
+        sinyal = "BUY (WEAK)"
     
     # === SENTIMENT CONSISTENCY ===
     sentimen_status = sentimen.get("status", "NETRAL")
@@ -1138,23 +1148,32 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         sentimen["status"] = "NETRAL"
         sentimen["dampak"] = "Tidak ada sentimen signifikan"
     
-    # 7. Confidence (WAJIB DISIPLIN)
-    confidence = min(abs(total_skor) / 10 * 100, 100)
-    if total_skor == 0:
-        confidence = 50
-    # Confidence based on signal type
-    if sinyal == "HOLD":
-        confidence = min(max(confidence, 45), 55)
-    elif "WEAK" in sinyal:
-        confidence = min(max(confidence, 50), 65)
-    elif "STRONG" in sinyal:
-        confidence = min(max(confidence, 65), 90)
-    # DILARANG confidence < 40%
-    if confidence < 40:
-        confidence = 40
+    # Cek apakah ada berita untuk confidence adjustment
+    has_news = berita and len(berita) > 0
     
-    # Volume rendah tidak jadi alasan override ke HOLD (ANTI-KONSERVATIF)
-    # Biarkan WEAK signal tetap berdiri
+    # 7. CONFIDENCE DINAMIS (JANGAN STATIS)
+    # Skor kecil → confidence rendah | Skor besar → confidence tinggi
+    abs_skor = abs(total_skor)
+    if abs_skor <= 1:
+        confidence = 20 + (abs_skor * 10)  # 20-30%
+    elif abs_skor <= 3:
+        confidence = 40 + ((abs_skor - 2) * 10)  # 40-50%
+    else:  # abs_skor >= 4
+        confidence = 60 + min((abs_skor - 3) * 5, 20)  # 60-80%
+    
+    # Volume rendah → -5%
+    if vol_rendah:
+        confidence = max(20, confidence - 5)
+    
+    # Tidak ada berita → -5%
+    if not has_news:
+        confidence = max(20, confidence - 5)
+    
+    # DILARANG confidence < 20%
+    if confidence < 20:
+        confidence = 20
+    if confidence > 90:
+        confidence = 90
     
     # 8. No-Trade Zone Check
     no_trade = detect_no_trade_zone(indikator, skor_detail)
@@ -1178,18 +1197,26 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         risk_pct = 0
         reward_pct = 0
     
-    # OPTIMASI TP: Jika RR < 1:2, sesuaikan TP agar minimal 1:2
+    # OPTIMASI TP: Jika RR < 1:1.5, sesuaikan TP agar minimal 1:1.5
     if risk_pct > 0 and reward_pct > 0:
         current_rr = reward_pct / risk_pct
-        if current_rr < 2.0:
-            # Sesuaikan TP untuk RR minimal 1:2
+        if current_rr < 1.5:
+            # Sesuaikan TP untuk RR minimal 1:1.5
             if is_buy:
-                tp = entry + (entry - sl) * 2
+                tp = entry + (entry - sl) * 1.5
             elif is_sell:
-                tp = entry - (sl - entry) * 2
+                tp = entry - (sl - entry) * 1.5
             reward_pct = abs(tp - entry) / entry * 100 if is_buy else abs(entry - tp) / entry * 100
     
-    rr_ratio = f"1:{reward_pct / risk_pct:.1f}" if risk_pct > 0 else "-"
+    # RISK / REWARD WAJIB VALID
+    if risk_pct > 0 and reward_pct > 0:
+        final_rr = reward_pct / risk_pct
+        if final_rr >= 1.5:
+            rr_ratio = f"1:{final_rr:.1f}"
+        else:
+            rr_ratio = "N/A"
+    else:
+        rr_ratio = "N/A"
     
     # === VALIDASI OTOMATIS ===
     # Pastikan arah BUY/SELL benar
