@@ -562,17 +562,50 @@ def calculate_adaptive_weights(trade_history):
     return weights
 
 # ==============================
-# 4. SENTIMENT ANALYSIS
+# 4. ANALISIS BERITA (IMPROVED)
 # ==============================
-def analyze_sentiment(berita, symbol):
+def analyze_news(berita, symbol):
     """
-    Klasifikasi sentimen berita: POSITIF / NETRAL / NEGATIF
-    Menggunakan LLM hanya untuk sentiment, bukan analisis penuh
+    Analisis berita dengan label: LANGSUNG / SEKTOR / MAKRO
+    Ambil maksimal 3 berita, tentukan sentimen, skor, dan dampak
     """
     if not berita:
-        return {"status": "NETRAL", "skor": 0.0, "dampak": "Tidak ada berita terkini"}
+        return {
+            "berita_label": [],
+            "status": "NETRAL",
+            "skor": 0.0,
+            "dampak": "Tidak ada berita signifikan"
+        }
     
-    headlines = "\n".join([f"- {b['judul']} ({b.get('sumber', 'N/A')})" for b in berita[:5]])
+    # Ambil maksimal 3 berita
+    top_berita = berita[:3]
+    headlines = "\n".join([f"- {b['judul']} ({b.get('sumber', 'N/A')})" for b in top_berita])
+    
+    # Deteksi label berita (LANGSUNG/SEKTOR/MAKRO)
+    symbol_upper = symbol.upper()
+    is_crypto = not symbol.endswith(".JK")
+    
+    labeled_berita = []
+    for b in top_berita:
+        judul = b.get('judul', '').lower()
+        label = "LANGSUNG"
+        if is_crypto:
+            if any(x in judul for x in ['sector', 'industry', 'mining', 'energy', 'bank', 'tech']):
+                label = "SEKTOR"
+            if any(x in judul for x in ['fed', 'interest rate', 'inflation', 'gdp', 'economy', 'recession', 'employment']):
+                label = "MAKRO"
+        else:
+            if symbol_upper in judul:
+                label = "LANGSUNG"
+            elif any(x in judul for x in ['sector', 'industry', 'banking', 'tech']):
+                label = "SEKTOR"
+            else:
+                label = "MAKRO"
+        labeled_berita.append({
+            "judul": b.get('judul', ''),
+            "sumber": b.get('sumber', 'N/A'),
+            "label": label
+        })
     
     prompt = f"""Analisis sentimen berita untuk aset {symbol}.
 
@@ -580,7 +613,7 @@ Berita:
 {headlines}
 
 JAWAB HANYA dalam format JSON (tanpa markdown, tanpa penjelasan tambahan):
-{{"status": "POSITIF/NETRAL/NEGATIF", "skor": <float -1.0 sampai 1.0>, "dampak": "<dampak singkat ke harga dalam 1 kalimat>"}}"""
+{{"status": "POSITIF/NETRAL/NEGATIF", "skor": <float -1.0 sampai 1.0>, "dampak": "<dampak ke harga dalam 1 kalimat>"}}"""
     
     try:
         response = client.chat.completions.create(
@@ -590,7 +623,6 @@ JAWAB HANYA dalam format JSON (tanpa markdown, tanpa penjelasan tambahan):
         )
         result = response.choices[0].message.content.strip()
         
-        # Handle jika LLM membungkus dalam markdown code block
         if "```" in result:
             parts = result.split("```")
             for part in parts:
@@ -601,22 +633,36 @@ JAWAB HANYA dalam format JSON (tanpa markdown, tanpa penjelasan tambahan):
                     result = part
                     break
         
-        # Cari JSON dalam response
         json_match = re.search(r'\{[^}]+\}', result)
         if json_match:
             parsed = json.loads(json_match.group())
-            # Validasi dan normalize
             status = parsed.get("status", "NETRAL").upper()
             if status not in ["POSITIF", "NETRAL", "NEGATIF"]:
                 status = "NETRAL"
             skor = max(-1.0, min(1.0, float(parsed.get("skor", 0))))
             dampak = str(parsed.get("dampak", "Tidak ada dampak signifikan"))
-            return {"status": status, "skor": skor, "dampak": dampak}
+            
+            return {
+                "berita_label": labeled_berita,
+                "status": status,
+                "skor": skor,
+                "dampak": dampak
+            }
         
-        return {"status": "NETRAL", "skor": 0.0, "dampak": "Gagal parsing sentimen"}
+        return {
+            "berita_label": labeled_berita,
+            "status": "NETRAL",
+            "skor": 0.0,
+            "dampak": "Gagal parsing sentimen"
+        }
     except Exception as e:
         print(f"⚠️ Error sentiment analysis: {e}")
-        return {"status": "NETRAL", "skor": 0.0, "dampak": "Gagal menganalisis sentimen"}
+        return {
+            "berita_label": labeled_berita,
+            "status": "NETRAL",
+            "skor": 0.0,
+            "dampak": "Gagal menganalisis sentimen"
+        }
 
 # ==============================
 # 5. SCORING ENGINE
@@ -882,9 +928,16 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
     if no_trade:
         no_trade_warning = "\n⛔ NO TRADE ZONE: Sideways + Volume lemah + Konflik indikator → Hindari entry!"
     
+    # Format berita dengan label
+    berita_list = sentimen.get("berita_label", [])
+    if berita_list:
+        berita_str = "\n".join([f"  • [{b['label']}] {b['judul'][:60]}..." for b in berita_list[:3]])
+    else:
+        berita_str = "Tidak ada berita signifikan"
+    
     output = f"""📊 ANALISIS {symbol.upper()}
 💰 Harga: {harga_display}
-🏪 Kondisi Market: {market_condition}
+🏪 Market: {market_condition}
 
 📈 Teknikal:
 • RSI: {indikator.get('rsi', 'N/A')} → {indikator.get('rsi_status', 'N/A')} (skor: {skor_detail.get('rsi', 0)})
@@ -894,6 +947,7 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
 • S/R: Support {s_display} | Resistance {r_display}
 
 📰 Sentimen:
+{berita_str}
 • Status: {sentimen.get('status', 'N/A')}
 • Skor: {sentimen.get('skor', 0)}
 • Dampak: {sentimen.get('dampak', 'N/A')}
@@ -955,8 +1009,8 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     # 3. Market condition (sudah dihitung di indikator)
     market_condition = indikator.get("market_condition", "UNKNOWN")
     
-    # 4. Sentiment Analysis
-    sentimen = analyze_sentiment(berita, symbol)
+    # 4. Analisis Berita
+    sentimen = analyze_news(berita, symbol)
     
     # 5. Calculate Scores (deterministik)
     skor_detail, total_skor = calculate_score(indikator, sentimen, weights, market_condition)
