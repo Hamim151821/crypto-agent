@@ -938,9 +938,11 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     support_fmt = fmt_price(support, curr)
     resistance_fmt = fmt_price(resistance, curr)
     
-    # Calculate breakout/breakdown levels (±1-2% dari S/R)
-    breakout_level = resistance * 1.02 if resistance > 0 else 0
-    breakdown_level = support * 0.98 if support > 0 else 0
+    # Calculate breakout/breakdown levels dengan buffer 1-2% (anti false breakout)
+    breakout_level = resistance * 1.02 if resistance > 0 else 0  # 2% above resistance
+    breakdown_level = support * 0.98 if support > 0 else 0  # 2% below support
+    breakout_with_buffer = fmt_price(breakout_level * 1.02, curr)  # Add 2% buffer = ~4% total
+    breakdown_with_buffer = fmt_price(breakdown_level * 0.98, curr)  # Add 2% buffer = ~4% total
     breakout_fmt = fmt_price(breakout_level, curr)
     breakdown_fmt = fmt_price(breakdown_level, curr)
     
@@ -1003,12 +1005,14 @@ PEDOMAN:
    - Jika RR tidak menarik → "risk/reward tidak memadai"
    - Jika harga di tengah range → "harga di area konsolidasi → no trade zone"
    - WAJIB gunakan format: "HOLD karena [faktor1] dan [faktor2]. Kondisi: {posisi_harga}. Strategi: tunggu konfirmasi breakout atau breakdown"
-10. WAJIB ADA TRADING SCENARIO untuk HOLD:
-    Format wajib:
-    "Skenario:
-    • BUY jika breakout {resistance_fmt} + volume meningkat
-    • SELL jika breakdown {support_fmt} + volume meningkat
-    • Selain itu: tetap HOLD"
+10. WAJIB ADA TRADING SCENARIO dengan ANGKA dan BUFFER (anti false breakout):
+    - Buffer 1-2% dari level S/R untuk validasi
+    - Format wajib:
+      "Skenario:
+      • BUY jika breakout di atas {breakout_with_buffer} (+1-2% buffer dari {resistance_fmt}) dengan volume meningkat
+      • SELL jika breakdown di bawah {breakdown_with_buffer} (-1-2% buffer dari {support_fmt}) dengan volume meningkat
+      • Selain itu: tetap HOLD"
+    - DILARANG membuat skenario tanpa level harga konkret
 11. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
 12. Hindari bahasa lemah seperti "tunggu area jelas" → gunakan "menunggu konfirmasi breakout atau breakdown"
 13. DILARANG menentukan level jauh dari S/R
@@ -1020,7 +1024,7 @@ CONTOH OUTPUT SELL:
 "Trend bearish menjadi faktor dominan dengan tekanan jual. Meskipun ada potensi bounce, sinyal utama tetap SELL."
 
 CONTOH OUTPUT HOLD KOMPREHENSIF:
-"HOLD karena trend bearish dan volume rendah (konfirmasi belum memadai). Kondisi: harga di area konsolidasi antara {support_fmt} dan {resistance_fmt}. Skenario: BUY jika breakout {resistance_fmt} + volume meningkat, SELL jika breakdown {support_fmt} + volume meningkat, selain itu tetap HOLD."
+"HOLD karena trend bearish dan volume rendah. Kondisi: harga di area konsolidasi ({support_fmt} - {resistance_fmt}). Skenario: BUY jika breakout di atas {breakout_with_buffer} dengan volume meningkat, SELL jika breakdown di bawah {breakdown_with_buffer} dengan volume meningkat, selain itu tetap HOLD."
 
 Jawab maksimal 2 kalimat (tapi skenario wajib dicantumkan dalam format yang jelas)."""
     
@@ -1044,8 +1048,8 @@ Jawab maksimal 2 kalimat (tapi skenario wajib dicantumkan dalam format yang jela
                 base = f"Trend bearish menjadi faktor dominan. {volume_confirm}."
             return f"{base} Meskipun ada potensi bounce, sinyal utama tetap SELL."
         else:
-            # HOLD dengan format baru
-            return f"HOLD karena harga di area konsolidasi ({support_fmt} - {resistance_fmt}). Skenario: BUY jika breakout {resistance_fmt} + volume meningkat, SELL jika breakdown {support_fmt} + volume meningkat, selain itu tetap HOLD."
+            # HOLD dengan format baru dan buffer
+            return f"HOLD karena harga di area konsolidasi ({support_fmt} - {resistance_fmt}). Skenario: BUY jika breakout di atas {breakout_with_buffer} dengan volume meningkat, SELL jika breakdown di bawah {breakdown_with_buffer} dengan volume meningkat, selain itu tetap HOLD."
 
 # ==============================
 # FORMAT OUTPUT
