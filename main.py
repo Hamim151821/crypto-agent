@@ -1190,19 +1190,7 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     # 5. Calculate Scores (deterministik)
     skor_detail, total_skor = calculate_score(indikator, sentimen, weights, market_condition)
     
-    # 6. KONSISTENSI SINYAL BERDASARKAN SKOR (WAJIB)
-    if total_skor >= 5:
-        sinyal = "STRONG BUY"
-    elif total_skor >= 3:
-        sinyal = "BUY (WEAK)"
-    elif total_skor <= -5:
-        sinyal = "STRONG SELL"
-    elif total_skor <= -3:
-        sinyal = "SELL (WEAK)"
-    else:
-        sinyal = "HOLD"
-    
-    # === LOGIKA VOLUME DIPERTEGAS ===
+    # === TENTUKAN TREND & VOLUME SEBELUM SINYAL ===
     is_trending_down = market_condition.startswith("TRENDING DOWN")
     is_trending_up = market_condition.startswith("TRENDING UP")
     vol_tinggi = indikator.get("volume_status") == "TINGGI"
@@ -1210,12 +1198,32 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     is_bearish = total_skor < 0
     is_bullish = total_skor > 0
     
-    # Volume tinggi + bearish → perkuat SELL
-    if vol_tinggi and is_bearish and sinyal == "BUY (WEAK)":
-        sinyal = "SELL (WEAK)"
-    # Volume rendah + bullish → lemah
-    if vol_rendah and is_bullish and sinyal == "STRONG BUY":
-        sinyal = "BUY (WEAK)"
+    # 6. KONSISTENSI SINYAL BERDASARKAN SKOR (WAJIB - QUANTITATIVE)
+    # Interpretasi skor:
+    # ≥ +4 → Bullish kuat → BUY
+    # +1 sampai +3 → Bullish lemah → BUY (WEAK) atau HOLD
+    # 0 → Netral → HOLD
+    # -1 sampai -3 → Bearish lemah → SELL (WEAK) atau HOLD
+    # ≤ -4 → Bearish kuat → SELL
+    
+    if total_skor >= 4:
+        sinyal = "BUY"
+    elif total_skor >= 1:
+        # Jika volume rendah → downgrade ke HOLD
+        if vol_rendah:
+            sinyal = "HOLD"
+        else:
+            sinyal = "BUY (WEAK)"
+    elif total_skor <= -4:
+        sinyal = "SELL"
+    elif total_skor <= -1:
+        # Jika volume rendah → downgrade ke HOLD
+        if vol_rendah:
+            sinyal = "HOLD"
+        else:
+            sinyal = "SELL (WEAK)"
+    else:
+        sinyal = "HOLD"
     
     # === SENTIMENT CONSISTENCY ===
     sentimen_status = sentimen.get("status", "NETRAL")
@@ -1232,33 +1240,31 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     # Cek apakah ada berita untuk confidence adjustment
     has_news = berita and len(berita) > 0
     
-    # 7. CONFIDENCE DINAMIS (JANGAN STATIS)
-    # Skor kecil → confidence rendah | Skor besar → confidence tinggi
+    # 7. CONFIDENCE SCORE (OBJECTIVE)
+    # Skor kuat (≥4 atau ≤-4) → 60–70%
+    # Skor sedang → 50–60%
+    # Netral (0) → 40–55%
     abs_skor = abs(total_skor)
-    if abs_skor <= 1:
-        confidence = 20 + (abs_skor * 10)  # 20-30%
-    elif abs_skor <= 3:
-        confidence = 40 + ((abs_skor - 2) * 10)  # 40-50%
-    else:  # abs_skor >= 4
-        confidence = 60 + min((abs_skor - 3) * 5, 20)  # 60-80%
+    if abs_skor >= 4:
+        confidence = 60 + min((abs_skor - 4) * 2, 10)  # 60-70%
+    elif abs_skor >= 1:
+        confidence = 50 + (abs_skor * 3)  # 50-60%
+    else:  # Netral
+        confidence = 40 + (total_skor * 5)  # 40-55%
     
-    # Volume rendah → -5%
+    # Volume rendah → -5% sampai -10%
     if vol_rendah:
-        confidence = max(20, confidence - 5)
+        confidence = max(35, confidence - 8)
     
-    # Tidak ada berita → -5%
+    # Sentimen lemah/tidak relevan → -5%
     if not has_news:
-        confidence = max(20, confidence - 5)
+        confidence = max(35, confidence - 5)
     
-    # Volume rendah DAN tidak ada berita → -10%
-    if vol_rendah and not has_news:
-        confidence = max(20, confidence - 10)
-    
-    # DILARANG confidence < 20%
-    if confidence < 20:
-        confidence = 20
-    if confidence > 90:
-        confidence = 90
+    # DILARANG confidence < 35%
+    if confidence < 35:
+        confidence = 35
+    if confidence > 75:
+        confidence = 75
     
     # 8. No-Trade Zone Check
     no_trade = detect_no_trade_zone(indikator, skor_detail)
