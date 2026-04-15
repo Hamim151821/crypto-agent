@@ -167,46 +167,59 @@ def get_stock_news(kode_saham):
 # ==============================
 def detect_market_condition(df, ma50, ma200):
     """
-    Tentukan kondisi market: TRENDING, SIDEWAYS, atau VOLATILE
-    Berdasarkan volatilitas returns dan jarak MA50-MA200
+    Tentukan kondisi market berdasarkan MA50 vs MA200:
+    - MA50 > MA200 → TRENDING UP
+    - MA50 < MA200 → TRENDING DOWN  
+    - MA50 ≈ MA200 → SIDEWAYS
+    
+    Jika volatilitas tinggi → tambahkan VOLATILE
     """
     if len(df) < 20:
         return "UNKNOWN"
     
     close = df["close"]
+    current_price = close.iloc[-1]
     
     # Hitung volatilitas dari daily returns (std dev 20 hari terakhir)
     returns = close.pct_change().dropna()
-    if len(returns) < 20:
-        volatility = returns.std() * 100
-    else:
+    if len(returns) >= 20:
         volatility = returns.iloc[-20:].std() * 100
+    else:
+        volatility = returns.std() * 100
     
-    # Volatilitas tinggi → VOLATILE
-    if volatility > 3.0:
-        return "VOLATILE"
+    is_volatile = volatility > 3.0
     
-    # Cek dari MA50 vs MA200
-    if ma50 is not None and ma200 is not None:
-        current_price = close.iloc[-1]
+    # Tentukan trend dari MA50 vs MA200
+    if ma50 is not None and ma200 is not None and current_price > 0:
+        ma_diff_pct = abs(ma50 - ma200) / current_price * 100
+        
+        if ma_diff_pct < 1.5:
+            trend = "SIDEWAYS"
+        elif ma50 > ma200:
+            trend = "TRENDING UP"
+        else:
+            trend = "TRENDING DOWN"
+    else:
+        # Fallback: gunakan price range 20 hari
+        recent = close.iloc[-20:]
         if current_price > 0:
-            ma_diff_pct = abs(ma50 - ma200) / current_price * 100
-            if ma_diff_pct < 2:
-                return "SIDEWAYS"
+            price_range_pct = (recent.max() - recent.min()) / current_price * 100
+            if price_range_pct < 5:
+                trend = "SIDEWAYS"
+            elif ma50 and ma200 and ma50 > ma200:
+                trend = "TRENDING UP"
+            elif ma50 and ma200:
+                trend = "TRENDING DOWN"
             else:
-                return "TRENDING"
+                trend = "UNKNOWN"
+        else:
+            trend = "UNKNOWN"
     
-    # Fallback: gunakan price range 20 hari
-    recent = close.iloc[-20:]
-    current_price = close.iloc[-1]
-    if current_price > 0:
-        price_range_pct = (recent.max() - recent.min()) / current_price * 100
-        if price_range_pct < 5:
-            return "SIDEWAYS"
-        elif price_range_pct > 20:
-            return "VOLATILE"
+    # Tambahkan VOLATILE jika volatilitas tinggi
+    if is_volatile:
+        return f"{trend} + VOLATILE"
     
-    return "TRENDING"
+    return trend
 
 # ==============================
 # INDIKATOR TEKNIKAL CRYPTO (ENHANCED)
