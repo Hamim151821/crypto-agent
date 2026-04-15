@@ -804,11 +804,8 @@ def detect_no_trade_zone(indikator, skor_detail):
 def calculate_entry_sl_tp(harga, sinyal, indikator):
     """
     Hitung Entry, Stop Loss, dan Take Profit
-    SL: 2-5% | TP: Risk:Reward >= 1:2
-    
-    LOGIKA BUY vs SELL (WAJIB):
-    - BUY: TP > Entry > SL
-    - SELL: SL > Entry > TP
+    TP harus berbasis support/resistance terdekat
+    SL harus logis (di atas resistance untuk SELL, di bawah support untuk BUY)
     """
     support = indikator.get("support", harga * 0.97)
     resistance = indikator.get("resistance", harga * 1.03)
@@ -823,22 +820,18 @@ def calculate_entry_sl_tp(harga, sinyal, indikator):
     
     if is_buy:
         entry = harga
-        # SL harus di bawah Entry
+        # SL harus di bawah Entry, preferably near support
         sl = min(entry * (1 - sl_pct), support * 0.99)
         sl = min(sl, entry * (1 - 0.02))  # Minimal 2% di bawah entry
-        # TP harus di atas Entry
-        risk = entry - sl
-        tp = entry + (risk * 2)  # Minimal 1:2 RR
-        tp = max(tp, resistance)  # Setidaknya sampai resistance
+        # TP: based on resistance (target terdekat)
+        tp = resistance  # TP = resistance terdekat
     elif is_sell:
         entry = harga
-        # SL harus di atas Entry
+        # SL harus di atas Entry / di atas resistance
         sl = max(entry * (1 + sl_pct), resistance * 1.01)
         sl = max(sl, entry * (1 + 0.02))
-        # TP harus di bawah Entry
-        risk = sl - entry
-        tp = entry - (risk * 2)
-        tp = min(tp, support)
+        # TP: based on support (target terdekat untuk SELL)
+        tp = support  # TP = support terdekat
     else:  # HOLD
         entry = harga
         sl = harga * 0.97
@@ -1284,36 +1277,66 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     has_clear_trend = is_trending_up or is_trending_down
     has_valid_sr = indikator.get("support", 0) > 0 and indikator.get("resistance", 0) > 0
     
-    # 7. CONFIDENCE SCORE (OBJECTIVE)
-    # Skor kuat (≥4 atau ≤-4) → 60–70%
-    # Skor sedang → 50–60%
-    # Netral (0) → 40–55%
+    # === DETEKSI KONFLIK UNTUK CONFIDENCE ===
+    # Check from indicators
+    rsi_status = indikator.get("rsi_status", "NORMAL")
+    macd_status = indikator.get("macd_status", "NORMAL")
+    trend_status = indikator.get("trend_status", "NEUTRAL")
+    
+    has_conflict = False
+    if ("BULLISH" in trend_status and "BEARISH" in macd_status) or ("BEARISH" in trend_status and "BULLISH" in macd_status):
+        has_conflict = True
+    if ("OVERSOLD" in rsi_status and "BEARISH" in macd_status) or ("OVERBOUGHT" in rsi_status and "BULLISH" in macd_status):
+        has_conflict = True
+    if vol_rendah:
+        has_conflict = True  # Volume rendah = sinyal lemah = conflict-like
+    
+    # 7. CONFIDENCE SCORE (LOGIS)
+    # Strong signal (semua indikator searah) → 60–80%
+    # Weak signal / konflik → maksimal 45–50%
+    # HOLD → maksimal 40%
     abs_skor = abs(total_skor)
-    if abs_skor >= 4:
-        confidence = 60 + min((abs_skor - 4) * 2, 10)  # 60-70%
+    
+    # Cek apakah semua indikator searah (strong signal)
+    is_strong_signal = abs_skor >= 4 and not has_conflict and not vol_rendah
+    
+    if is_strong_signal:
+        confidence = 60 + min((abs_skor - 4) * 3, 20)  # 60-80%
+    elif abs_skor >= 4:
+        confidence = 50 + min((abs_skor - 4) * 2, 10)  # 50-60% (kuat tapi ada konflik)
     elif abs_skor >= 1:
-        confidence = 50 + (abs_skor * 3)  # 50-60%
-    else:  # Netral
-        confidence = 40 + (total_skor * 5)  # 40-55%
+        if has_conflict or vol_rendah:
+            confidence = 40 + (abs_skor * 2)  # Weak signal / conflict → max 45-50%
+        else:
+            confidence = 50 + (abs_skor * 2)  # 50-60%
+    else:  # Netral / HOLD
+        confidence = 40
+    
+    # HOLD → maksimal 40%
+    if sinyal == "HOLD":
+        confidence = min(confidence, 40)
     
     # JIKA TREND JELAS + S/R VALID → min 45%
-    if has_clear_trend and has_valid_sr:
+    if has_clear_trend and has_valid_sr and not vol_rendah:
         confidence = max(45, confidence)
     
-    # Volume sangat rendah + sinyal tidak valid → turunkan
-    is_valid_signal = ("BUY" in sinyal or "SELL" in sinyal) and not vol_rendah
-    if vol_rendah and not is_valid_signal:
-        confidence = max(40, confidence - 10)
+    # Volume rendah + sinyal lemah → confidence rendah
+    if vol_rendah and ("WEAK" in sinyal or sinyal == "HOLD"):
+        confidence = max(35, confidence - 10)
+    
+    # Konflik + bukan strong signal → max 50%
+    if has_conflict and not is_strong_signal:
+        confidence = min(confidence, 50)
     
     # Sentimen lemah/tidak relevan → -5%
     if not has_news:
-        confidence = max(40, confidence - 5)
+        confidence = max(35, confidence - 5)
     
-    # DILARANG confidence < 40%
-    if confidence < 40:
-        confidence = 40
-    if confidence > 75:
-        confidence = 75
+    # DILARANG confidence > 80% atau < 35%
+    if confidence < 35:
+        confidence = 35
+    if confidence > 80:
+        confidence = 80
     
     # 8. No-Trade Zone Check
     no_trade = detect_no_trade_zone(indikator, skor_detail)
