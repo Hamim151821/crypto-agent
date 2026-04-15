@@ -935,6 +935,12 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     support_fmt = fmt_price(support, curr)
     resistance_fmt = fmt_price(resistance, curr)
     
+    # Calculate breakout/breakdown levels (±1-2% dari S/R)
+    breakout_level = resistance * 1.02 if resistance > 0 else 0
+    breakdown_level = support * 0.98 if support > 0 else 0
+    breakout_fmt = fmt_price(breakout_level, curr)
+    breakdown_fmt = fmt_price(breakdown_level, curr)
+    
     # Volume + Trend confirmation text
     is_vol_tinggi = vol_status == "TINGGI"
     is_bearish_trend = "TRENDING DOWN" in market_condition
@@ -957,13 +963,13 @@ PEDOMAN:
 1. Jika BUY: WAJIB sebutkan alasan utama (trend atau momentum), format: "trend bullish menjadi faktor dominan..." atau "momentum naik didukung..."
 2. Jika BUY: WAJIB tambahkan "meskipun ada risiko X, sinyal utama tetap BUY"
 3. Jika SELL: WAJIB sebutkan alasan utama dan tambahkan "meskipun ada risiko X, sinyal utama tetap SELL"
-4. Jika HOLD: WAJIB sebutkan level angka:
-   - "Breakout di atas {resistance_fmt} → potensi BUY"
-   - "Breakdown di bawah {support_fmt} → potensi SELL"
+4. Jika HOLD: WAJIB gunakan level S/R sebagai acuan utama:
+   - "Breakout di atas {breakout_fmt} (±2% dari {resistance_fmt}) → potensi BUY"
+   - "Breakdown di bawah {breakdown_fmt} (±2% dari {support_fmt}) → potensi SELL"
 5. Jika volume tinggi + trend bearish → WAJIB tulis: "volume tinggi mengkonfirmasi tekanan jual"
 6. Jika volume tinggi + trend bullish → WAJIB tulis: "volume tinggi mengkonfirmasi kenaikan"
 7. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
-8. DILARANG kalimat umum tanpa angka
+8. DILARANG menentukan level jauh dari S/R
 
 CONTOH OUTPUT BUY:
 "Trend bullish menjadi faktor dominan dengan volume tinggi. Meskipun ada risiko koreksi minor, sinyal utama tetap BUY."
@@ -972,7 +978,7 @@ CONTOH OUTPUT SELL:
 "Trend bearish menjadi faktor dominan dengan tekanan jual. Meskipun ada potensi bounce, sinyal utama tetap SELL."
 
 CONTOH OUTPUT HOLD WAJIB ANGKA:
-"Breakout di atas {resistance_fmt} → potensi BUY. Breakdown di bawah {support_fmt} → potensi SELL."
+"Breakout di atas {breakout_fmt} (±2% dari resistance {resistance_fmt}) → potensi BUY. Breakdown di bawah {breakdown_fmt} (±2% dari support {support_fmt}) → potensi SELL."
 
 Jawab maksimal 2 kalimat."""
     
@@ -996,7 +1002,7 @@ Jawab maksimal 2 kalimat."""
                 base = f"Trend bearish menjadi faktor dominan. {volume_confirm}."
             return f"{base} Meskipun ada potensi bounce, sinyal utama tetap SELL."
         else:
-            return f"Breakout di atas {resistance_fmt} → potensi BUY. Breakdown di bawah {support_fmt} → potensi SELL."
+            return f"Breakout di atas {breakout_fmt} (±2% dari resistance {resistance_fmt}) → potensi BUY. Breakdown di bawah {breakdown_fmt} (±2% dari support {support_fmt}) → potensi SELL."
 
 # ==============================
 # FORMAT OUTPUT
