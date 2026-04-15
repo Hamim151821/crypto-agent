@@ -1082,21 +1082,25 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     if total_skor >= 6:
         sinyal = "STRONG BUY"
     elif total_skor >= 3:
-        # Edge case: Jika skor +4-5 + TRENDING UP → BUY (WEAK) tetap
-        if total_skor >= 4 and market_condition.startswith("TRENDING UP"):
-            sinyal = "BUY (WEAK)"
-        else:
-            sinyal = "BUY (WEAK)"
+        sinyal = "BUY (WEAK)"
     elif total_skor <= -6:
         sinyal = "STRONG SELL"
     elif total_skor <= -3:
-        # Edge case: Jika skor -3-5 + TRENDING DOWN + volume tinggi → SELL (WEAK)
-        if total_skor >= -5 and market_condition.startswith("TRENDING DOWN") and indikator.get("volume_status") == "TINGGI":
-            sinyal = "SELL (WEAK)"
-        else:
-            sinyal = "SELL (WEAK)"
+        sinyal = "SELL (WEAK)"
     else:
         sinyal = "HOLD"
+    
+    # === ANTI OVER-HOLD ===
+    # Jika TRENDING DOWN + volume tinggi + skor ≤ -2 → SELL (WEAK)
+    is_trending_down = market_condition.startswith("TRENDING DOWN")
+    is_trending_up = market_condition.startswith("TRENDING UP")
+    vol_tinggi = indikator.get("volume_status") == "TINGGI"
+    
+    if sinyal == "HOLD" and is_trending_down and vol_tinggi and total_skor <= -2:
+        sinyal = "SELL (WEAK)"
+    # Jika TRENDING UP + skor ≥ +3 → BUY (WEAK)
+    if sinyal == "HOLD" and is_trending_up and total_skor >= 3:
+        sinyal = "BUY (WEAK)"
     
     # 7. Confidence (WAJIB DISIPLIN)
     confidence = min(abs(total_skor) / 10 * 100, 100)
@@ -1125,17 +1129,31 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     entry, sl, tp = calculate_entry_sl_tp(harga, sinyal, indikator)
     
     # 10. Risk & Reward
-    if sinyal == "BELI" and entry > 0:
+    is_buy = "BUY" in sinyal
+    is_sell = "SELL" in sinyal
+    
+    if is_buy and entry > 0:
         risk_pct = abs(entry - sl) / entry * 100
         reward_pct = abs(tp - entry) / entry * 100
-    elif sinyal == "JUAL" and entry > 0:
+    elif is_sell and entry > 0:
         risk_pct = abs(sl - entry) / entry * 100
         reward_pct = abs(entry - tp) / entry * 100
     else:
         risk_pct = 0
         reward_pct = 0
     
-    rr_ratio = f"1:{reward_pct / risk_pct:.1f}" if risk_pct > 0 else "N/A"
+    # OPTIMASI TP: Jika RR < 1:2, sesuaikan TP agar minimal 1:2
+    if risk_pct > 0 and reward_pct > 0:
+        current_rr = reward_pct / risk_pct
+        if current_rr < 2.0:
+            # Sesuaikan TP untuk RR minimal 1:2
+            if is_buy:
+                tp = entry + (entry - sl) * 2
+            elif is_sell:
+                tp = entry - (sl - entry) * 2
+            reward_pct = abs(tp - entry) / entry * 100 if is_buy else abs(entry - tp) / entry * 100
+    
+    rr_ratio = f"1:{reward_pct / risk_pct:.1f}" if risk_pct > 0 else "-"
     
     # Risk Level based on conditions
     is_volatile = "VOLATILE" in market_condition
