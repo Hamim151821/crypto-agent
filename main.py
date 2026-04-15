@@ -1053,6 +1053,16 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     if confidence < 60:
         sinyal = "HOLD"
     
+    # Jika volume sangat rendah, turunkan confidence
+    vol_status = indikator.get("volume_status", "NORMAL")
+    if vol_status == "RENDAH" and sinyal != "HOLD":
+        confidence = max(30, confidence - 15)
+    
+    # Cek ulang confidence setelah volume adjustment
+    if confidence < 60:
+        sinyal = "HOLD"
+        sinyal = "HOLD"
+    
     # 8. No-Trade Zone Check
     no_trade = detect_no_trade_zone(indikator, skor_detail)
     if no_trade:
