@@ -1250,6 +1250,10 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     # Cek apakah ada berita untuk confidence adjustment
     has_news = berita and len(berita) > 0
     
+    # Cek trend dan struktur S/R
+    has_clear_trend = is_trending_up or is_trending_down
+    has_valid_sr = indikator.get("support", 0) > 0 and indikator.get("resistance", 0) > 0
+    
     # 7. CONFIDENCE SCORE (OBJECTIVE)
     # Skor kuat (≥4 atau ≤-4) → 60–70%
     # Skor sedang → 50–60%
@@ -1262,17 +1266,22 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     else:  # Netral
         confidence = 40 + (total_skor * 5)  # 40-55%
     
-    # Volume rendah → -5% sampai -10%
-    if vol_rendah:
-        confidence = max(35, confidence - 8)
+    # JIKA TREND JELAS + S/R VALID → min 45%
+    if has_clear_trend and has_valid_sr:
+        confidence = max(45, confidence)
+    
+    # Volume sangat rendah + sinyal tidak valid → turunkan
+    is_valid_signal = ("BUY" in sinyal or "SELL" in sinyal) and not vol_rendah
+    if vol_rendah and not is_valid_signal:
+        confidence = max(40, confidence - 10)
     
     # Sentimen lemah/tidak relevan → -5%
     if not has_news:
-        confidence = max(35, confidence - 5)
+        confidence = max(40, confidence - 5)
     
-    # DILARANG confidence < 35%
-    if confidence < 35:
-        confidence = 35
+    # DILARANG confidence < 40%
+    if confidence < 40:
+        confidence = 40
     if confidence > 75:
         confidence = 75
     
