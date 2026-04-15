@@ -897,30 +897,40 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     vol_status = indikator.get("volume_status", "N/A")
     sent_status = sentimen.get("status", "NETRAL")
     
-    # === DETEKSI KONFLIK (PROFESIONAL) ===
+    # === DETEKSI KONFLIK (JIKA TREND TIDAK JELAS) ===
+    # Jika trend jelas dominan → TIDAK ADA konflik, trend yang menentukan
     conflicts = []
+    is_trend_jelas = False
     
-    # Trend vs Indikator - format profesional
-    if "BULLISH" in trend_status and "BEARISH" in macd_status:
-        conflicts.append("terjadi konflik antara momentum jangka pendek (MACD) dan trend utama (MA), sehingga arah belum terkonfirmasi")
-    elif "BEARISH" in trend_status and "BULLISH" in macd_status:
-        conflicts.append("terjadi konflik antara momentum jangka pendek (MACD) dan trend utama (MA), sehingga arah belum terkonfirmasi")
+    # Cek apakah trend jelas dominan
+    if "BULLISH" in trend_status:
+        is_trend_jelas = True  # MA50 > MA200
+    elif "BEARISH" in trend_status:
+        is_trend_jelas = True  # MA50 < MA200
     
-    # RSI vs MACD - format profesional
-    if "OVERSOLD" in rsi_status and "BEARISH" in macd_status:
-        conflicts.append("terjadi konflik antara RSI (oversold) dan momentum (MACD), sehingga arah belum terkonfirmasi")
-    elif "OVERBOUGHT" in rsi_status and "BULLISH" in macd_status:
-        conflicts.append("terjadi konflik antara RSI (overbought) dan momentum (MACD), sehingga arah belum terkonfirmasi")
+    # Konflik hanya jika trend SIDEWAYS atau tidak jelas
+    if not is_trend_jelas:
+        # Trend sideways - baru ada kemungkinan konflik
+        if "BULLISH" in trend_status and "BEARISH" in macd_status:
+            conflicts.append("momentum jangka pendek (MACD) bertentangan dengan trend")
+        elif "BEARISH" in trend_status and "BULLISH" in macd_status:
+            conflicts.append("momentum jangka pendek (MACD) bertentangan dengan trend")
+        
+        # RSI vs MACD hanya jika trend tidak jelas
+        if "OVERSOLD" in rsi_status and "BEARISH" in macd_status:
+            conflicts.append("RSI oversold namun momentum masih bearish")
+        elif "OVERBOUGHT" in rsi_status and "BULLISH" in macd_status:
+            conflicts.append("RSI overbought namun momentum masih bullish")
     
-    # Volume rendah - format profesional
+    # Volume rendah - selalu catat sebagai weaken faktor
     if vol_status == "RENDAH":
         conflicts.append("volume rendah mengurangi kekuatan sinyal")
     
-    # Sentimen netral - format profesional
+    # Sentimen netral - selalu catat
     if sent_status == "NETRAL":
-        conflicts.append("sentimen netral tidak memberikan dukungan")
+        conflicts.append("tanpa dukungan sentimen kuat")
     
-    conflict_text = "; ".join(conflicts) if conflicts else "tidak ada konflik signifikan"
+    conflict_text = "; ".join(conflicts) if conflicts else "trend utama menentukan arah"
     
     # === GENERATE REASON BERDASARKAN SINYAL ===
     is_buy = "BUY" in sinyal
