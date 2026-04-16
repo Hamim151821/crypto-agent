@@ -254,12 +254,13 @@ def get_stock_news(kode_saham):
 # ==============================
 def detect_market_condition(df, ma50, ma200):
     """
-    Tentukan kondisi market berdasarkan MA50 vs MA200:
-    - MA50 > MA200 → TRENDING UP
-    - MA50 < MA200 → TRENDING DOWN  
-    - MA50 ≈ MA200 → SIDEWAYS
+    Tentukan kondisi market dengan LOGIKA BARU:
+    1. Jika harga < MA20 DAN < MA50 DAN < MA200 → BEARISH (strict)
+    2. Jika harga > MA20 DAN > MA50 DAN > MA200 → BULLISH (strict)
+    3. Jika ADX < 20 → SIDEWAYS/CHOPPY
+    4. Lainnya → berdasarkan MA50 vs MA200
     
-    Jika volatilitas tinggi → tambahkan VOLATILE
+    Priority: Price Position > ADX > MA Crossover
     """
     if len(df) < 20:
         return "UNKNOWN"
@@ -267,6 +268,31 @@ def detect_market_condition(df, ma50, ma200):
     close = df["close"]
     current_price = close.iloc[-1]
     
+    # Ambil MA values
+    ma20 = df["ma20"].iloc[-1] if "ma20" in df.columns and pd.notna(df["ma20"].iloc[-1]) else None
+    
+    # Hitung ADX jika tersedia
+    adx = None
+    if "adx" in df.columns:
+        adx = df["adx"].iloc[-1]
+    
+    # === LOGIKA BARU: PRICE POSITION CHECK ===
+    # Jika harga di bawah SEMUA MA →pasti BEARISH
+    if current_price > 0 and ma20 is not None and ma50 is not None and ma200 is not None:
+        if current_price < ma20 and current_price < ma50 and current_price < ma200:
+            return "TRENDING DOWN"  # Strict bearish - harga di bawah semua MA
+    
+    # Jika harga di atas SEMUA MA →pasti BULLISH
+    if current_price > 0 and ma20 is not None and ma50 is not None and ma200 is not None:
+        if current_price > ma20 and current_price > ma50 and current_price > ma200:
+            return "TRENDING UP"  # Strict bullish - harga di atas semua MA
+    
+    # === ADX CHECK ===
+    # Jika ADX < 20 → SIDEWAYS/CHOPPY (tidak ada trend)
+    if adx is not None and adx < 20:
+        return "SIDEWAYS (CHOPPY)"
+    
+    # === FALLBACK: MA CROSSOVER ===
     # Hitung volatilitas dari daily returns (std dev 20 hari terakhir)
     returns = close.pct_change().dropna()
     if len(returns) >= 20:
@@ -404,6 +430,34 @@ def get_crypto_indicators(nama_crypto):
         # OBV values
         obv = df["obv"].iloc[-1] if pd.notna(df["obv"].iloc[-1]) else 0
         obv_prev = df["obv"].iloc[-2] if len(df) > 1 and pd.notna(df["obv"].iloc[-2]) else 0
+        
+        # OBV Divergence Detection
+        # Bullish Divergence: Price makes Lower Lows but OBV makes Higher Lows = Accumulation
+        # Bearish Divergence: Price makes Higher Highs but OBV makes Lower Highs = Distribution
+        obv_divergence = "NONE"
+        
+        if len(df) >= 10:
+            # Get last 10 closes and OBV
+            recent_closes_10 = df["close"].iloc[-10:].tolist()
+            recent_obv_10 = df["obv"].iloc[-10:].tolist()
+            
+            # Check price direction (last 5 vs previous 5)
+            price_first_5_avg = sum(recent_closes_10[:5]) / 5
+            price_last_5_avg = sum(recent_closes_10[5:]) / 5
+            obv_first_5_avg = sum(recent_obv_10[:5]) / 5
+            obv_last_5_avg = sum(recent_obv_10[5:]) / 5
+            
+            price_falling = price_last_5_avg < price_first_5_avg
+            price_rising = price_last_5_avg > price_first_5_avg
+            obv_rising = obv_last_5_avg > obv_first_5_avg
+            obv_falling = obv_last_5_avg < obv_first_5_avg
+            
+            # Bullish Divergence: Price down but OBV up (Accumulation)
+            if price_falling and obv_rising:
+                obv_divergence = "BULLISH (Accumulation)"
+            # Bearish Divergence: Price up but OBV down (Distribution)
+            elif price_rising and obv_falling:
+                obv_divergence = "BEARISH (Distribution)"
         
         # Bollinger Bands
         bb_upper = round(df["bb_upper"].iloc[-1], 4) if pd.notna(df["bb_upper"].iloc[-1]) else None
@@ -556,6 +610,7 @@ def get_crypto_indicators(nama_crypto):
             # Volume Flow - OBV
             "obv": round(obv, 2) if obv is not None else 0,
             "obv_prev": round(obv_prev, 2) if obv_prev is not None else 0,
+            "obv_divergence": obv_divergence,
             # Data quality
             "data_quality": data_quality
         }
@@ -676,6 +731,32 @@ def get_stock_indicators(kode_saham):
         
         # VWAP
         vwap = round(df["vwap"].iloc[-1], 4) if pd.notna(df["vwap"].iloc[-1]) else None
+        
+        # OBV values and divergence
+        obv = df["obv"].iloc[-1] if pd.notna(df["obv"].iloc[-1]) else 0
+        obv_prev = df["obv"].iloc[-2] if len(df) > 1 and pd.notna(df["obv"].iloc[-2]) else 0
+        
+        # OBV Divergence Detection
+        obv_divergence = "NONE"
+        
+        if len(df) >= 10:
+            recent_closes_10 = df["close"].iloc[-10:].tolist()
+            recent_obv_10 = df["obv"].iloc[-10:].tolist()
+            
+            price_first_5_avg = sum(recent_closes_10[:5]) / 5
+            price_last_5_avg = sum(recent_closes_10[5:]) / 5
+            obv_first_5_avg = sum(recent_obv_10[:5]) / 5
+            obv_last_5_avg = sum(recent_obv_10[5:]) / 5
+            
+            price_falling = price_last_5_avg < price_first_5_avg
+            price_rising = price_last_5_avg > price_first_5_avg
+            obv_rising = obv_last_5_avg > obv_first_5_avg
+            obv_falling = obv_last_5_avg < obv_first_5_avg
+            
+            if price_falling and obv_rising:
+                obv_divergence = "BULLISH (Accumulation)"
+            elif price_rising and obv_falling:
+                obv_divergence = "BEARISH (Distribution)"
         
         current_vol = df["volume"].iloc[-1] if pd.notna(df["volume"].iloc[-1]) else 0
         avg_vol = df["vol_avg"].iloc[-1] if pd.notna(df["vol_avg"].iloc[-1]) else current_vol
@@ -808,6 +889,10 @@ def get_stock_indicators(kode_saham):
             "s1": s1,
             "r2": r2,
             "s2": s2,
+            # Volume Flow - OBV
+            "obv": round(obv, 2) if obv is not None else 0,
+            "obv_prev": round(obv_prev, 2) if obv_prev is not None else 0,
+            "obv_divergence": obv_divergence,
             # Data quality
             "data_quality": data_quality
         }
@@ -1090,14 +1175,44 @@ def calculate_score(indikator, sentimen, weights, market_condition):
     macd_status = indikator.get("macd_status", "BEARISH")
     scores["macd"] = 2 if macd_status == "BULLISH" else -2
     
-    # Trend Score (MA50 vs MA200)
-    trend_status = indikator.get("trend_status", "NEUTRAL")
-    if trend_status == "BULLISH":
-        scores["trend"] = 3
-    elif trend_status == "BEARISH":
-        scores["trend"] = -3
-    else:
+    # Trend Score (PRICE vs MA - STRICT LOGIC)
+    # 1. Jika harga < MA20 DAN < MA50 DAN < MA200 → BEARISH = -3 (strict)
+    # 2. Jika harga > MA20 DAN > MA50 DAN > MA200 → BULLISH = +3 (strict)
+    # 3. Jika ADX < 20 → NEUTRAL = 0 (sideways)
+    # 4. Lainnya → gunakan trend_status
+    current_price = indikator.get("current_price", 0)
+    ma20 = indikator.get("ma20", 0)
+    ma50 = indikator.get("ma50", 0)
+    ma200 = indikator.get("ma200", 0)
+    adx = indikator.get("adx", 0)
+    
+    # ADX < 20 → SIDEWAYS/CHOPPY → skor = 0
+    if adx > 0 and adx < 20:
         scores["trend"] = 0
+    # Strict price position check
+    elif current_price > 0 and ma20 > 0 and ma50 > 0 and ma200 > 0:
+        if current_price < ma20 and current_price < ma50 and current_price < ma200:
+            scores["trend"] = -3  # Strict bearish - harga di bawah semua MA
+        elif current_price > ma20 and current_price > ma50 and current_price > ma200:
+            scores["trend"] = 3   # Strict bullish - harga di atas semua MA
+        else:
+            # Fallback ke trend_status
+            trend_status = indikator.get("trend_status", "NEUTRAL")
+            if trend_status == "BULLISH":
+                scores["trend"] = 3
+            elif trend_status == "BEARISH":
+                scores["trend"] = -3
+            else:
+                scores["trend"] = 0
+    else:
+        # Fallback
+        trend_status = indikator.get("trend_status", "NEUTRAL")
+        if trend_status == "BULLISH":
+            scores["trend"] = 3
+        elif trend_status == "BEARISH":
+            scores["trend"] = -3
+        else:
+            scores["trend"] = 0
     
     # Volume Score — SMART LOGIC
     volume_status = indikator.get("volume_status", "NORMAL")
@@ -1209,45 +1324,75 @@ def detect_breakout_breakdown(indikator, market_condition):
     return "none"
 
 # ==============================
-# 9. ENTRY / SL / TP CALCULATION
+# 9. ENTRY / SL / TP CALCULATION (DYNAMIC RISK MANAGEMENT)
 # ==============================
 def calculate_entry_sl_tp(harga, sinyal, indikator):
     """
-    Hitung Entry, Stop Loss, dan Take Profit
-    TP harus berbasis support/resistance terdekat
-    SL harus logis (di atas resistance untuk SELL, di bawah support untuk BUY)
+    Hitung Entry, Stop Loss, dan Take Profit dengan LOGIKA BARU:
+    
+    Entry = Last Close Price (atau sedikit di atas Resistance untuk breakout)
+    SL = Last Price - (1.5 × ATR) (pilih yang lebih besar dari Support - 2%)
+    TP = Nearest Resistance (R1)
+    
+    Risk/Reward: (TP - Entry) / (Entry - SL)
+    Jika RR < 1.5 → NO TRADE
     """
     support = indikator.get("support", harga * 0.97)
     resistance = indikator.get("resistance", harga * 1.03)
+    r1 = indikator.get("r1", resistance)  # Nearest resistance
+    atr = indikator.get("atr", 0)
     market_condition = indikator.get("market_condition", "TRENDING")
-    
-    # SL percentage: volatile → lebih besar
-    is_volatile = "VOLATILE" in market_condition
-    sl_pct = 0.05 if is_volatile else 0.03
     
     is_buy = "BUY" in sinyal
     is_sell = "SELL" in sinyal
     
+    # === DYNAMIC SL CALCULATION ===
+    if atr > 0:
+        # Gunakan ATR-based SL: Last Price - (1.5 × ATR)
+        atr_sl = harga - (1.5 * atr)
+        # Support-based SL: Support - 2%
+        support_sl = support * 0.98
+        # Pilih yang memberikan ruang lebih besar (tidak mudah tersapu)
+        if atr_sl > support_sl:
+            sl = atr_sl  # ATR SL lebih aman
+        else:
+            sl = support_sl  # Support SL lebih aman
+    else:
+        # Fallback: 3% dari harga
+        sl = harga * 0.97
+    
+    # === ENTRY CALCULATION ===
     if is_buy:
-        entry = harga
-        # SL harus di bawah Entry, preferably near support
-        sl = min(entry * (1 - sl_pct), support * 0.99)
-        sl = min(sl, entry * (1 - 0.02))  # Minimal 2% di bawah entry
-        # TP: based on resistance (target terdekat)
-        tp = resistance  # TP = resistance terdekat
+        entry = harga  # Last close price
     elif is_sell:
         entry = harga
-        # SL harus di atas Entry / di atas resistance
-        sl = max(entry * (1 + sl_pct), resistance * 1.01)
-        sl = max(sl, entry * (1 + 0.02))
-        # TP: based on support (target terdekat untuk SELL)
-        tp = support  # TP = support terdekat
-    else:  # HOLD
-        entry = harga
-        sl = harga * 0.97
-        tp = harga * 1.03
+    else:  # HOLD - no position
+        return 0, 0, 0
     
-    return round(entry, 6), round(sl, 6), round(tp, 6)
+    # === TP CALCULATION ===
+    # TP = Nearest Resistance (R1)
+    if r1 > entry:
+        tp = r1
+    else:
+        tp = resistance  # Fallback ke resistance utama
+    
+    # === RISK/REWARD CALCULATION ===
+    risk_amount = abs(entry - sl)
+    reward_amount = abs(tp - entry)
+    
+    if risk_amount > 0:
+        rr_ratio = reward_amount / risk_amount
+    else:
+        rr_ratio = 0
+    
+    # Validasi RR - jika < 1.5, tidak layak trading
+    is_valid = rr_ratio >= 1.5
+    
+    # Jika tidak valid, return 0 (NO TRADE)
+    if not is_valid:
+        return 0, 0, 0
+    
+    return round(entry, 4), round(sl, 4), round(tp, 4)
 
 # ==============================
 # 10. COPY TRADING — POSITION SIZING
@@ -1937,6 +2082,7 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
 • Bollinger:    {bb_pos}
 • Trend:        {indikator.get('trend_status', 'N/A')} | MA20: {ma20_str} | MA50: {ma50_str} | MA200: {ma200_str} | Skor: {skor_detail.get('trend', 0)}
 • Volume:       {indikator.get('volume_status', 'N/A')} (rasio: {indikator.get('volume_ratio', 'N/A')}x) | Skor: {skor_detail.get('volume', 0)}
+• OBV Flow:     {indikator.get('obv_divergence', 'N/A')} | OBV: {indikator.get('obv', 0):,.0f}
 • ATR:          {atr:.4f} | VWAP: {vwap:.4f}
 
 ============================================================
@@ -2034,6 +2180,26 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     is_bearish = total_skor < 0
     is_bullish = total_skor > 0
     
+    # === VOLUME RATIO FOR SIGNAL ENGINE ===
+    volume_ratio = indikator.get("volume_ratio", 1.0)
+    
+    # === PRICE NEAR SUPPORT/RESISTANCE CHECK ===
+    # Untuk Speculative Buy: harga dekat support (within 1.5%)
+    # Untuk Speculative Sell: harga dekat resistance (within 1.5%)
+    current_price = harga  # Gunakan variabel harga yang sudah ada
+    support = indikator.get("support", 0)
+    resistance = indikator.get("resistance", 0)
+    price_near_support = False
+    price_near_resistance = False
+    
+    if current_price > 0 and support > 0:
+        # Harga dekat support jika within 1.5% dari support
+        price_near_support = current_price <= support * 1.015
+    
+    if current_price > 0 and resistance > 0:
+        # Harga dekat resistance jika within 1.5% dari resistance
+        price_near_resistance = current_price >= resistance * 0.985
+    
     # === KONFLIK INDIKATOR - JIKA KONFLIK: HOLD SAMPAI KONFIRMASI ===
     # Cek konflik antara trend dan momentum
     rsi_status = indikator.get("rsi_status", "NORMAL")
@@ -2053,24 +2219,42 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     is_breakout = breakout_status == "breakout"
     is_breakdown = breakout_status == "breakdown"
     
-    # 6. SIGNAL LOGIC - KONFIRMASI WAJIB
-    # Jika konflik indikator: HOLD SAMPAI BREAKOUT/BREAKDOWN TERKONFIRMASI
+    # === ENHANCED SIGNAL ENGINE ===
+    # Speculative Buy (Buy on Weakness): Jika trend bearish + RSI oversold + harga dekat support
+    # Strong Buy: Jika breakout + volume tinggi
+    # Strong Sell: Jika breakdown + volume tinggi
     
     if has_conflict:
-        # Konflik indikator → HOLD sampai konfirmasi breakout/breakdown
         sinyal = "HOLD"
         is_early_entry = False
     elif vol_rendah:
-        # Volume rendah → HOLD
         sinyal = "HOLD"
         is_early_entry = False
+    elif is_breakout and total_skor >= 1 and volume_ratio > 1.2:
+        # Strong Buy: Breakout + Volume tinggi (1.2x+) + skor positif
+        sinyal = "STRONG BUY (BREAKOUT CONFIRMED)"
+        is_early_entry = False
+    elif is_breakdown and total_skor <= -1 and volume_ratio > 1.2:
+        # Strong Sell: Breakdown + Volume tinggi (1.2x+) + skor negatif
+        sinyal = "STRONG SELL (BREAKDOWN CONFIRMED)"
+        is_early_entry = False
     elif is_breakout and total_skor >= 1:
-        # Breakout terkonfirmasi + skor positif → BUY (STRONG CONFIRMATION)
+        # Regular Buy: Breakout + skor positif
         sinyal = "BUY (CONFIRMED)"
         is_early_entry = False
     elif is_breakdown and total_skor <= -1:
-        # Breakdown terkonfirmasi + skor negatif → SELL (STRONG CONFIRMATION)
+        # Regular Sell: Breakdown + skor negatif
         sinyal = "SELL (CONFIRMED)"
+        is_early_entry = False
+    elif is_trending_down and rsi_status == "OVERSOLD" and price_near_support:
+        # Speculative Buy: Trend bearish + RSI oversold + harga dekat support
+        # Ini adalah "buy on weakness" - accumulation zone
+        sinyal = "SPECULATIVE BUY (Accumulation Zone)"
+        is_early_entry = False
+    elif is_trending_up and rsi_status == "OVERBOUGHT" and price_near_resistance:
+        # Speculative Sell: Trend bullish + RSI overbought + harga dekat resistance
+        # Ini adalah "sell on strength" - distribution zone
+        sinyal = "SPECULATIVE SELL (Distribution Zone)"
         is_early_entry = False
     else:
         # TIDAK ADA KONFIRMASI → HOLD (Tidak ada EARLY)
@@ -2088,6 +2272,17 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         # Jika tidak NETRAL tapi skor = 0 → ubah ke NETRAL
         sentimen["status"] = "NETRAL"
         sentimen["dampak"] = "Tidak ada sentimen signifikan"
+    
+    # === VOLUME CONFIRMATION FOR SENTIMENT ===
+    # Jika sentimen positif/negatif tapi Volume Ratio < 0.8x → downgrade ke NETRAL
+    # News must be validated by Volume
+    if sentimen_skor != 0 and volume_ratio > 0:
+        if volume_ratio < 0.8:
+            # Volume rendah - news tidak signifikan
+            sentimen["status"] = "NETRAL"
+            sentimen["skor"] = 0
+            sentimen["dampak"] = "News diabaikan pasar (Volume rendah)"
+            print("Validasi: Sentimen positif/negatif tapi Volume Ratio < 0.8x → Downgrade ke NETRAL")
     
     # Cek apakah ada berita untuk confidence adjustment
     has_news = berita and len(berita) > 0
