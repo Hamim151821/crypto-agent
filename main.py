@@ -1775,14 +1775,19 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
         kelly_display = "-"
     else:
         is_trade = "BUY" in sinyal or "SELL" in sinyal
-        copy_trade_status = "OPEN" if is_trade else "-"
+        copy_trade_status = "OPEN" if is_trade else "NO TRADE"
         position_size_display = f"{position_size:,.6f}"
         risk_reward_display = str(risk_metrics.get("risk_reward", 0))
         risk_pct_display = f"{risk_metrics.get('risk_pct', 0)}%"
         kelly_display = f"{risk_metrics.get('kelly_pct', 0)}%"
     
     # Data Quality SELALU tampilkan (bukan hanya saat trading)
-    data_quality_display = f"{data_quality.get('quality_grade', 'N/A')} ({data_quality.get('quality_score', 0)}%)"
+    data_score = data_quality.get("quality_score", 0)
+    data_grade = data_quality.get("quality_grade", "N/A")
+    if data_score > 0:
+        data_quality_display = f"{data_grade} ({data_score}%)"
+    else:
+        data_quality_display = "N/A"
     
     # Jika ada warnings, tampilkan
     if data_quality.get("warnings"):
