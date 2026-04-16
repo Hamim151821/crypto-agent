@@ -1567,7 +1567,14 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     
     # Tentukan posisi harga untuk konteks tambahan
     price_position = "di atas MA" if current_price > ma50 else "di bawah MA"
-    if current_price < ma50 and current_price < ma200:
+    adx = indikator.get("adx", 0)
+    macd_status = indikator.get("macd_status", "N/A")
+    
+    # LOGIKA KHUSUS: ADX < 25 + harga di bawah MA + MACD Bullish = POTENSI REVERSAL
+    if current_price < ma50 and current_price < ma200 and adx < 25 and "BULLISH" in macd_status:
+        price_position = "di bawah MA50 & MA200 (EARLY REVERSAL - potensi perubahan trend)"
+        trend_direction = "TRANSISI / POTENSI REVERSAL"
+    elif current_price < ma50 and current_price < ma200:
         price_position = "di bawah MA50 & MA200 (DOMINASI BEARISH)"
     elif current_price > ma50 and current_price > ma200:
         price_position = "di atas MA50 & MA200 (DOMINASI BULLISH)"
@@ -1576,33 +1583,57 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     support = indikator.get("support", 0)
     resistance = indikator.get("resistance", 0)
     
+    # Trend description berdasarkan ADX
+    if adx < 25:
+        trend_desc = "ADX < 25 → trend lemah / fase konsolidasi / potensi transisi"
+    else:
+        trend_desc = f"ADX = {adx} → trend {'kuat' if adx > 25 else 'lemah'}"
+    
+    # Skor trend untuk narasi
+    trend_skor = skor_detail.get("trend", 0)
+    if trend_skor >= 3:
+        trend_narasi = "Skor trend +3 → potensi bullish / peluang naik"
+    elif trend_skor <= -3:
+        trend_narasi = "Skor trend -3 → potensi bearish / peluang turun"
+    else:
+        trend_narasi = ""
+    
     prompt = f"""Kamu adalah AI Trading Analyst profesional. Berikan ALASAN SINGKAT (maksimal 2 kalimat) dalam Bahasa Indonesia.
 
 DATA ANALISIS:
 - Harga saat ini: {current_price} ({price_position})
-- Trend: {trend_direction} | ADX: {adx} ({adx_status})
+- Trend: {trend_direction}
+- {trend_desc}
 - MA20: {ma20:.2f} | MA50: {ma50:.2f} | MA200: {ma200:.2f}
 - RSI: {rsi} | Stochastic: {stoch_k}
 - Volume: {vol_status} | MACD: {macd_status}
 - Sinyal: {sinyal} | Skor Total: {total_skor}
+- Skor Trend: {trend_skor} ({trend_narasi})
 - Support: {support:.2f} | Resistance: {resistance:.2f}
 
 ATURAN WAJIB - KONSISTENSI LOGIKA:
 
-1. SINKRONKAN SIGNAL DENGAN ANALISIS:
+1. ADX < 25:
+   - TIDAK boleh menggunakan istilah "trend kuat"
+   - Gunakan: "trend lemah / fase konsolidasi / potensi transisi"
+
+2. KHUSUS: Jika ADX < 25 DAN harga di bawah MA50 & MA200 DAN MACD Bullish:
+   - WAJIB label: "EARLY REVERSAL / POTENSI PERUBAHAN TREND"
+   - DILARANG menyebut: "dominasi bearish"
+
+3. SKOR TREND = +3:
+   - Narasi WAJIB mengarah ke bullish / potensi naik
+   - TIDAK boleh bilang dominasi bearish
+
+4. SKOR TREND = -3:
+   - Narasi WAJIB mengarah ke bearish / potensi turun
+   - TIDAK boleh bilang peluang bullish tanpa konteks
+
+5. SINKRONKAN SIGNAL DENGAN ANALISIS:
    - Jika sinyal HOLD → analisis harus menjelaskan mengapa TIDAK ADA posisi aktif
-   - Jika sinyal BUY → WAJIB menyebut dominasi BULLISH dan kondisi mendukung buying
-   - Jika sinyal SELL → WAJIB menyebut dominasi BEARISH dan kondisi mendukung selling
-   - DILARANG kontradiksi: sinyal BUY tapi alasan bearish, atau sebaliknya
-
-2. VALIDASI TREND vs ANALISIS:
-   - Jika Trend = BULLISH (harga > MA50 > MA200) → TIDAK boleh menyebut "dominasi bearish"
-   - Jika Trend = BEARISH (harga < MA50 < MA200) → TIDAK boleh menyebut "dominasi bullish"
-   - Gunakan ADX: >25 = trend kuat, <25 = trend lemah/ranging
-
-3. POSISI HARGA TERHADAP MA:
-   - Jika harga < MA50 & MA200 → jelaskan DOMINASI BEARISH
-   - Jika harga > MA50 & MA200 → jelaskan DOMINASI BULLISH
+   - Jika sinyal BUY → WAJIB menyebut kondisi bullish
+   - Jika sinyal SELL → WAJIB menyebut kondisi bearish
+   - DILARANG kontradiksi
 
 4. JIKA HOLD:
    - WAJIB sebutkan ALASAN SPESIFIK (MINIMAL 2 faktor):
