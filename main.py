@@ -401,6 +401,10 @@ def get_crypto_indicators(nama_crypto):
         ma200 = round(df["ma200"].iloc[-1], 4) if pd.notna(df["ma200"].iloc[-1]) else None
         ma20 = round(df["ma20"].iloc[-1], 4) if pd.notna(df["ma20"].iloc[-1]) else None
         
+        # OBV values
+        obv = df["obv"].iloc[-1] if pd.notna(df["obv"].iloc[-1]) else 0
+        obv_prev = df["obv"].iloc[-2] if len(df) > 1 and pd.notna(df["obv"].iloc[-2]) else 0
+        
         # Bollinger Bands
         bb_upper = round(df["bb_upper"].iloc[-1], 4) if pd.notna(df["bb_upper"].iloc[-1]) else None
         bb_middle = round(df["bb_lower"].iloc[-1], 4) if pd.notna(df["bb_middle"].iloc[-1]) else None
@@ -549,6 +553,9 @@ def get_crypto_indicators(nama_crypto):
             "s1": s1,
             "r2": r2,
             "s2": s2,
+            # Volume Flow - OBV
+            "obv": round(obv, 2) if obv is not None else 0,
+            "obv_prev": round(obv_prev, 2) if obv_prev is not None else 0,
             # Data quality
             "data_quality": data_quality
         }
