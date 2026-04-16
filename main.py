@@ -1999,63 +1999,60 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     # Cek konflik untuk confidence scoring (sudah dihitung di sinyal logic)
     # has_conflict sudah ada dari sinyal logic
     
-    # 7. CONFIDENCE SCORE (LOGIS)
+# 7. CONFIDENCE SCORE (LOGIS)
     abs_skor = abs(total_skor)
+    adx = indikator.get("adx", 0)
     
     # Cek apakah semua indikator searah (strong signal)
     is_strong_signal = abs_skor >= 4 and not has_conflict and not vol_rendah
     
     # Deteksi apakah ini early entry atau confirmed
-    is_early_entry = "EARLY" in sinyal
     is_confirmed = "CONFIRMED" in sinyal
     
-    # Confidence base on signal type
-    if is_confirmed:
-        # Confirmed signal (breakout/breakdown + volume) → higher confidence
-        confidence = 70 + min((abs_skor - 4) * 2, 15)  # 70-85%
-    elif is_early_entry:
-        # Early entry (belum breakout) → lower confidence
-        if is_strong_signal:
-            confidence = 50 + min((abs_skor - 4) * 2, 15)  # 50-65%
-        else:
-            confidence = 40 + min(abs_skor * 2, 15)  # 40-55%
-    elif abs_skor >= 4:
-        confidence = 50 + min((abs_skor - 4) * 2, 10)  # 50-60% (kuat tapi ada konflik)
+    # Trend kuat + ADX > 30 + semua indikator searah → ≥60%
+    is_trend_kuat = adx > 30
+    all_indicators_aligned = (
+        not has_conflict and 
+        not vol_rendah and
+        (("BULLISH" in trend_status and "BULLISH" in macd_status) or 
+         ("BEARISH" in trend_status and "BEARISH" in macd_status))
+    )
+    
+    if is_trend_kuat and all_indicators_aligned:
+        # Trend kuat + ADX > 30 + semua indikator searah → 60-85%
+        confidence = 60 + min((abs_skor - 4) * 2, 25)
+    elif is_confirmed:
+        # Confirmed signal → 70-85%
+        confidence = 70 + min((abs_skor - 4) * 2, 15)
+    elif is_strong_signal:
+        confidence = 50 + min((abs_skor - 4) * 2, 10)  # 50-60%
     elif abs_skor >= 1:
         if has_conflict or vol_rendah:
-            confidence = 40 + (abs_skor * 2)  # Weak signal / conflict → max 45-50%
+            confidence = 35 + (abs_skor * 2)  # Weak signal / conflict → max 45%
         else:
-            confidence = 50 + (abs_skor * 2)  # 50-60%
+            confidence = 45 + (abs_skor * 2)  # 45-55%
     else:  # Netral / HOLD
-        confidence = 40
+        confidence = 35
     
     # HOLD → maksimal 40%
     if sinyal == "HOLD":
         confidence = min(confidence, 40)
     
-    # JIKA TREND JELAS + S/R VALID → min 45%
-    if has_clear_trend and has_valid_sr and not vol_rendah:
-        confidence = max(45, confidence)
+    # Jika ada konflik → max 45%
+    if has_conflict:
+        confidence = min(confidence, 45)
     
-    # Volume rendah + sinyal lemah → confidence rendah
-    if vol_rendah and ("EARLY" in sinyal or sinyal == "HOLD"):
-        confidence = max(35, confidence - 10)
+    # Volume rendah → -10%
+    if vol_rendah:
+        confidence = max(30, confidence - 10)
     
-    # Konflik + bukan strong signal → max 50%
-    if has_conflict and not is_strong_signal:
-        confidence = min(confidence, 50)
-    
-    # Sentimen lemah/tidak relevan → -5%
+    # Tidak ada berita → -5%
     if not has_news:
-        confidence = max(35, confidence - 5)
+        confidence = max(30, confidence - 5)
     
-    # Early entry → extra penalty (belum ada breakout confirmation)
-    if is_early_entry:
-        confidence = max(35, confidence - 10)
-    
-    # DILARANG confidence > 80% atau < 35%
-    if confidence < 35:
-        confidence = 35
+    # DILARANG confidence > 85% atau < 30%
+    if confidence < 30:
+        confidence = 30
     if confidence > 85:
         confidence = 85
     
