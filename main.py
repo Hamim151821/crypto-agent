@@ -2139,10 +2139,10 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     data_quality = calculate_data_quality(indikator, berita)
     
     # ============================================================
-    # VALIDASI OTOMATIS SEBELUM OUTPUT
+    # VALIDASI OTOMATIS SEBELUM OUTPUT (KETAT)
     # ============================================================
     
-    # 1. VALIDASI BIAS - Pastikan Bias konsisten dengan Trend + ADX
+    # 1. BIAS LOCK - Pastikan Bias sesuai Trend + ADX
     adx = indikator.get("adx", 0)
     trend_status = indikator.get("trend_status", "NEUTRAL")
     current_price = indikator.get("current_price", 0)
@@ -2152,61 +2152,126 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     # Tentukan trend direction yang dominan
     trend_is_bearish = (trend_status == "BEARISH") or (current_price < ma50 and ma50 < ma200 and ma200 > 0)
     trend_is_bullish = (trend_status == "BULLISH") or (current_price > ma50 and ma50 > ma200 and ma200 > 0)
-    trend_is_strong = adx > 25
+    trend_is_strong = adx >= 25  # ADX >= 25 = trend kuat
     
-    # Override sinyal jika trend kuat bertentangan dengan skor
+    # Jika trend kuat (ADX >= 25) → bias WAJIB mengikuti trend
     if trend_is_strong:
         if trend_is_bearish and is_buy and not is_breakout:
-            # Trend bearish kuat + ADX tinggi + BUY lemah = HOLD
-            sinyal = "HOLD"
+            sinyal = "HOLD (Bearish Bias)"
             is_early_entry = False
-            print(f"Validasi: Trend bearish kuat (ADX={adx}) override sinyal BUY")
+            print(f"Validasi: Trend bearish kuat (ADX={adx}) → HOLD (Bearish Bias)")
         elif trend_is_bullish and is_sell and not is_breakdown:
-            # Trend bullish kuat + ADX tinggi + SELL lemah = HOLD
-            sinyal = "HOLD"
+            sinyal = "HOLD (Bullish Bias)"
             is_early_entry = False
-            print(f"Validasi: Trend bullish kuat (ADX={adx}) override sinyal SELL")
+            print(f"Validasi: Trend bullish kuat (ADX={adx}) → HOLD (Bullish Bias)")
     
-    # 2. VALIDASI SKOR - Pastikan penjumlahan benar
-    expected_total = (
-        skor_detail.get("rsi", 0) + 
-        skor_detail.get("macd", 0) + 
-        skor_detail.get("trend", 0) + 
-        skor_detail.get("volume", 0) + 
-        skor_detail.get("sentimen", 0)
-    )
+    # 2. SCORE INTEGRITY - Validasi penjumlahan skor
+    expected_total = round(skor_detail.get("rsi", 0) + skor_detail.get("macd", 0) + skor_detail.get("trend", 0) + skor_detail.get("volume", 0) + skor_detail.get("sentimen", 0), 1)
     if abs(expected_total - total_skor) > 0.1:
         print(f"Warning: Skor tidak konsisten. Expected: {expected_total}, Actual: {total_skor}")
-        total_skor = round(expected_total, 1)
+        total_skor = expected_total
     
-    # 3. VALIDASI DATA QUALITY - Cek anomali
+    # 3. DATA QUALITY CHECK - Deteksi anomali dan indikator identik
     ma20 = indikator.get("ma20", 0)
+    data_anomaly = False
+    
+    # Check MA20 ≈ MA50
     if ma20 and ma50 and ma50 != 0:
         ma_diff_pct = abs(ma20 - ma50) / ma50 * 100
         if ma_diff_pct < 0.5:
-            # MA20 ≈ MA50 → flat trend / data tidak normal
-            data_quality["quality_grade"] = f"WARNING ({data_quality.get('quality_grade', 'C')})"
-            data_quality["warnings"] = data_quality.get("warnings", []) + ["MA20 ≈ MA50 (flat trend)"]
-            # Turunkan confidence jika ada anomali
-            confidence = max(35, confidence - 15)
+            data_anomaly = True
     
-    # 4. VALIDASI RISK/REWARD - Jika HOLD, tidak boleh ada R:R aneh
-    if sinyal == "HOLD" or entry == 0:
-        risk_metrics["rr_ratio"] = "N/A (No Position)"
-        risk_metrics["is_valid_rr"] = False
+    # Check indikator identik (RSI = Stochastic, dll)
+    rsi = indikator.get("rsi", 0)
+    stoch_k = indikator.get("stoch_k", 0)
+    if rsi > 0 and stoch_k > 0 and abs(rsi - stoch_k) < 1:
+        data_anomaly = True
     
-    # 5. VALIDASI SINYAL - Skor lemah harus HOLD
-    if -1 < total_skor < 1 and sinyal != "HOLD":
+    # Set quality warning dan turunkan confidence
+    if data_anomaly:
+        current_grade = data_quality.get("quality_grade", "C")
+        data_quality["quality_grade"] = f"WARNING ({current_grade})"
+        data_quality["warnings"] = data_quality.get("warnings", []) + ["Data tidak normal atau flat"]
+        confidence = max(35, confidence - 10)
+        print(f"Validasi: Data anomaly detected → Confidence diturunkan")
+    
+    # 4. SIGNAL CONSISTENCY - Skor lemah harus HOLD
+    # Skor -1 sampai +1 → HOLD, Skor >= +3 → BUY, Skor <= -3 → SELL
+    if -1 <= total_skor <= 1:
         sinyal = "HOLD"
         is_early_entry = False
         print(f"Validasi: Skor lemah ({total_skor}) → HOLD")
+    elif total_skor >= 3 and not is_breakout:
+        # Skor kuat tapi belum breakout → EARLY
+        if "BUY" not in sinyal:
+            sinyal = "BUY (EARLY)"
+            is_early_entry = True
+    elif total_skor <= -3 and not is_breakdown:
+        # Skor kuat tapi belum breakdown → EARLY
+        if "SELL" not in sinyal:
+            sinyal = "SELL (EARLY)"
+            is_early_entry = True
     
-    # 6. Re-capture signals after validation
+    # 5. RISK/REWARD VALIDATION - Jika tidak ada entry
+    if sinyal == "HOLD" or entry == 0 or entry is None:
+        risk_metrics["rr_ratio"] = "N/A"
+        risk_metrics["is_valid_rr"] = False
+        entry = 0
+        sl = 0
+        tp = 0
+        position_size = 0
+    
+    # 6. NO CONTRADICTION - Pastikan sinyal tidak berkontradiksi dengan trend
+    # Jika trend bearish kuat tapi sinyal bullish → override
+    if trend_is_strong:
+        if trend_is_bearish and "BUY" in sinyal and "CONFIRMED" not in sinyal:
+            sinyal = "HOLD (Bearish Bias)"
+            is_early_entry = False
+            print("Validasi: Kontradiksi trend bearish + sinyal bullish → HOLD")
+        elif trend_is_bullish and "SELL" in sinyal and "CONFIRMED" not in sinyal:
+            sinyal = "HOLD (Bullish Bias)"
+            is_early_entry = False
+            print("Validasi: Kontradiksi trend bullish + sinyal bearish → HOLD")
+    
+    # 7. Re-capture signals after validation
     is_buy = "BUY" in sinyal
     is_sell = "SELL" in sinyal
     
+    # 8. FORCE BIAS ON HOLD - Jika HOLD wajib ada bias
+    if sinyal == "HOLD" and "(" not in sinyal:
+        if trend_is_bearish:
+            sinyal = "HOLD (Bearish Bias)"
+        elif trend_is_bullish:
+            sinyal = "HOLD (Bullish Bias)"
+        else:
+            # Weak trend - gunakan skor untuk tentukan bias
+            if total_skor > 0:
+                sinyal = "HOLD (Bullish Bias)"
+            elif total_skor < 0:
+                sinyal = "HOLD (Bearish Bias)"
+    
+    # 9. FINAL SANITY CHECK
+    # Pastikan tidak ada konflik antara skor dan sinyal
+    if is_buy and total_skor < 0:
+        print(f"Warning: Sinyal BUY tapi skor negatif ({total_skor})")
+        sinyal = "HOLD"
+        is_buy = False
+    if is_sell and total_skor > 0:
+        print(f"Warning: Sinyal SELL tapi skor positif ({total_skor})")
+        sinyal = "HOLD"
+        is_sell = False
+    
     # AI Reasoning (LLM call — hanya untuk penjelasan)
+    # Include additional context for better reasoning
     alasan = get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition)
+    
+    # Final contradiction check - perbaiki alasan jika berkontradiksi
+    # Jika alasan menyebut bullish tapi trend bearish kuat → perbaiki
+    if trend_is_strong and trend_is_bearish and "bullish" in alasan.lower() and "hold" not in sinyal.lower():
+        # Override reason untuk konsistensi
+        alasan = f"HOLD karena trend bearish kuat (ADX={adx}). Harga di bawah MA50 & MA200 menunjukkan dominasi seller. Tunggu pullback ke resistance {indikator.get('resistance', 0):.2f} dengan volume tinggi untuk konfirmasi."
+    elif trend_is_strong and trend_is_bullish and "bearish" in alasan.lower() and "hold" not in sinyal.lower():
+        alasan = f"HOLD karena trend bullish kuat (ADX={adx}). Harga di atas MA50 & MA200 menunjukkan dominasi buyer. Tunggu pullback ke support {indikator.get('support', 0):.2f} dengan volume tinggi untuk konfirmasi."
     
     # Format Output
     output = format_analysis_output(
