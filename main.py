@@ -2214,21 +2214,22 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         print(f"Validasi: Data anomaly detected → Confidence diturunkan")
     
     # 4. SIGNAL CONSISTENCY - Skor lemah harus HOLD
-    # Skor -1 sampai +1 → HOLD, Skor >= +3 → BUY, Skor <= -3 → SELL
+    # Skor -1 sampai +1 → HOLD
+    # Hanya BUY/SELL jika ada konfirmasi breakout/breakdown
     if -1 <= total_skor <= 1:
         sinyal = "HOLD"
         is_early_entry = False
         print(f"Validasi: Skor lemah ({total_skor}) → HOLD")
     elif total_skor >= 3 and not is_breakout:
-        # Skor kuat tapi belum breakout → EARLY
-        if "BUY" not in sinyal:
-            sinyal = "BUY (EARLY)"
-            is_early_entry = True
+        # Skor kuat tapi belum breakout → HOLD (tidak ada EARLY)
+        sinyal = "HOLD"
+        is_early_entry = False
+        print(f"Validasi: Skor kuat tapi belum breakout → HOLD")
     elif total_skor <= -3 and not is_breakdown:
-        # Skor kuat tapi belum breakdown → EARLY
-        if "SELL" not in sinyal:
-            sinyal = "SELL (EARLY)"
-            is_early_entry = True
+        # Skor kuat tapi belum breakdown → HOLD (tidak ada EARLY)
+        sinyal = "HOLD"
+        is_early_entry = False
+        print(f"Validasi: Skor kuat tapi belum breakdown → HOLD")
     
     # 5. RISK/REWARD VALIDATION - Jika tidak ada entry
     if sinyal == "HOLD" or entry == 0 or entry is None:
