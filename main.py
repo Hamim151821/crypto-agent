@@ -1554,7 +1554,7 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     stoch_k = indikator.get("stoch_k", 50)
     rsi = indikator.get("rsi", 50)
     
-    # Determine trend direction explicitly
+# Determine trend direction explicitly
     trend_direction = "NETRAL"
     if current_price > ma50 and ma50 > ma200:
         trend_direction = "BULLISH (dominan)"
@@ -1565,53 +1565,70 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     elif ma50 < ma200:
         trend_direction = "BEARISH (terbalik)"
     
+    # Tentukan posisi harga untuk konteks tambahan
+    price_position = "di atas MA" if current_price > ma50 else "di bawah MA"
+    if current_price < ma50 and current_price < ma200:
+        price_position = "di bawah MA50 & MA200 (DOMINASI BEARISH)"
+    elif current_price > ma50 and current_price > ma200:
+        price_position = "di atas MA50 & MA200 (DOMINASI BULLISH)"
+    
+    # Support/Resistance values untuk skenario
+    support = indikator.get("support", 0)
+    resistance = indikator.get("resistance", 0)
+    
     prompt = f"""Kamu adalah AI Trading Analyst profesional. Berikan ALASAN SINGKAT (maksimal 2 kalimat) dalam Bahasa Indonesia.
 
 DATA ANALISIS:
-- Harga saat ini: {current_price}
+- Harga saat ini: {current_price} ({price_position})
 - Trend: {trend_direction} | ADX: {adx} ({adx_status})
-- MA20: {ma20} | MA50: {ma50} | MA200: {ma200}
+- MA20: {ma20:.2f} | MA50: {ma50:.2f} | MA200: {ma200:.2f}
 - RSI: {rsi} | Stochastic: {stoch_k}
 - Volume: {vol_status} | MACD: {macd_status}
-- Sinyal: {sinyal} | Skor: {total_skor}
-- Konflik: {conflict_text}
+- Sinyal: {sinyal} | Skor Total: {total_skor}
+- Support: {support:.2f} | Resistance: {resistance:.2f}
 
-ATURAN WAJIB:
-1. JIKA ADX > 25 (trend kuat):
-   - TIDAK BOLEH bilang "konsolidasi" atau "trend tidak jelas"
-   - Jika HOLD → jelaskan "menunggu pullback ke area support/resistance"
-   
-2. JIKA HARGA DI BAWAH MA50 & MA200:
-   - Tegaskan DOMINASI BEARISH
-   - Tidak boleh netral atau ambigu
-   
-3. JIKA HOLD:
-   - WAJIB sebutkan ALASAN SPESIFIK:
-     * "volume rendah → konfirmasi belum memadai" (bukan hanya "tidak ada sinyal")
-     * "menunggu pullback ke MA50" (jika ADX tinggi)
-     * "harga di area konsolidasi, tunggu breakout" (jika di tengah range)
-   - TIDAK BOLEH: "menunggu konfirmasi" saja tanpa konteks
-   
-4. SCENARIO HARUS PRESISI:
-   - BUY: {breakout_fmt} (+2% dari {resistance_fmt})
-   - SELL: {breakdown_fmt} (-2% dari {support_fmt})
-   - Gunakan angka real, bukan random
+ATURAN WAJIB - KONSISTENSI LOGIKA:
 
-5. ANALISIS WAJIB MENJELASKAN:
-   - Posisi harga vs MA (di atas/di bawah)
-   - Kekuatan trend (ADX)
-   - Peran volume (meningkat/menurun)
-   - Mengapa BELUM bisa entry (bukan hanya "belum ada sinyal")
+1. SINKRONKAN SIGNAL DENGAN ANALISIS:
+   - Jika sinyal HOLD → analisis harus menjelaskan mengapa TIDAK ADA posisi aktif
+   - Jika sinyal BUY → WAJIB menyebut dominasi BULLISH dan kondisi mendukung buying
+   - Jika sinyal SELL → WAJIB menyebut dominasi BEARISH dan kondisi mendukung selling
+   - DILARANG kontradiksi: sinyal BUY tapi alasan bearish, atau sebaliknya
 
-6. RISK MANAGEMENT:
-   - Jika NO TRADE → "R:R = N/A (No Position)" bukan "1:-"
-   
+2. VALIDASI TREND vs ANALISIS:
+   - Jika Trend = BULLISH (harga > MA50 > MA200) → TIDAK boleh menyebut "dominasi bearish"
+   - Jika Trend = BEARISH (harga < MA50 < MA200) → TIDAK boleh menyebut "dominasi bullish"
+   - Gunakan ADX: >25 = trend kuat, <25 = trend lemah/ranging
+
+3. POSISI HARGA TERHADAP MA:
+   - Jika harga < MA50 & MA200 → jelaskan DOMINASI BEARISH
+   - Jika harga > MA50 & MA200 → jelaskan DOMINASI BULLISH
+
+4. JIKA HOLD:
+   - WAJIB sebutkan ALASAN SPESIFIK (MINIMAL 2 faktor):
+     * "volume rendah → konfirmasi belum memadai"
+     * "belum ada breakout ke atas resistance {resistance:.2f}"
+     * "trend bearish kuat, tunggu pullback ke MA50"
+     * "harga di area konsolidasi, tunggu konfirmasi"
+   - Fokus ke area konfirmasi: "tunggu harga tembus resistance / menembus support"
+   - TIDAK BOLEH: "menunggu konfirmasi" saja tanpa menyebutkan level konkret
+
+5. SCENARIO WAJIB PRESISI:
+   - BUY jika: breakout di atas {resistance:.2f} + volume tinggi + trend bullish
+   - SELL jika: breakdown di bawah {support:.2f} + volume tinggi + trend bearish
+   - HOLD jika: tidak ada konfirmasi breakout/breakdown dengan volume
+
+6. ANALISIS JELAS DAN LENGKAP:
+   - Siapa dominant? Buyer atau Seller?
+   - Mengapa sekarang TIDAK optimal untuk entry?
+   - Kapan saat yang tepat untuk entry?
+
 7. TIDAK BOLEH:
-   - "menunggu konfirmasi" tanpa konteks
-   - "risiko tinggi" tanpa alasan spesifik
-   - Bilang "didukung sentimen" jika NETRAL
+   - "menunggu arah" tanpa konteks
+   - "market belum jelas"
+   - Kontradiksi antara sinyal dan analisis
 
-Jawab maksimal 2 kalimat dengan skenario konkret."""
+Jawab maksimal 2 kalimat dengan skenario konkret dan jelas."""
     
     try:
         response = client.chat.completions.create(
@@ -1636,10 +1653,17 @@ Jawab maksimal 2 kalimat dengan skenario konkret."""
             return f"{base} Tunggu breakout di atas {breakout_fmt} untuk konfirmasi BUY."
         elif is_sell:
             base = f"Trend bearish menjadi faktor dominan. {confirmation_text}"
-            return f"{base} Tunggu breakdown di bawah {breakdown_fmt} untuk konfirmasi SELL."
+            return f"{base} Tunggu breakdown di bawah {breakdown_fmt} dengan volume tinggi untuk konfirmasi SELL."
         else:
-            # HOLD dengan format baru dan buffer
-            return f"HOLD karena harga di area konsolidasi ({support_fmt} - {resistance_fmt}). Skenario: BUY jika breakout di atas {breakout_with_buffer} dengan volume meningkat, SELL jika breakdown di bawah {breakdown_with_buffer} dengan volume meningkat."
+            # HOLD - gunakan data untuk generate alasan yang tepat
+            trend_info = ""
+            if current_price and ma50 and ma200:
+                if current_price < ma50 and current_price < ma200:
+                    trend_info = "harga di bawah MA50 & MA200 menunjukkan dominasi BEARISH"
+                elif current_price > ma50 and current_price > ma200:
+                    trend_info = "harga di atas MA50 & MA200 menunjukkan dominasi BULLISH"
+            
+            return f"HOLD karena {trend_info if trend_info else 'belum ada konfirmasi breakout/breakdown dengan volume tinggi'}. Skenario: BUY jika harga breakout di atas {resistance:.2f} dengan volume tinggi, SELL jika breakdown di bawah {support:.2f} dengan volume tinggi."
 
 # ==============================
 # FORMAT OUTPUT
@@ -1737,7 +1761,7 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
         else:
             early_entry_warning = ""
 
-    # PRIORITAS UTAMA: Jika HOLD, wajib "-" semua
+# PRIORITAS UTAMA: Jika HOLD, wajib "-" semua
     if sinyal == "HOLD":
         entry_display = "-"
         sl_display = "-"
@@ -1749,7 +1773,6 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
         risk_reward_display = "-"
         risk_pct_display = "-"
         kelly_display = "-"
-        data_quality_display = "-"
     else:
         is_trade = "BUY" in sinyal or "SELL" in sinyal
         copy_trade_status = "OPEN" if is_trade else "-"
@@ -1757,7 +1780,14 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
         risk_reward_display = str(risk_metrics.get("risk_reward", 0))
         risk_pct_display = f"{risk_metrics.get('risk_pct', 0)}%"
         kelly_display = f"{risk_metrics.get('kelly_pct', 0)}%"
-        data_quality_display = f"{data_quality.get('quality_grade', 'N/A')} ({data_quality.get('quality_score', 0)}%)"
+    
+    # Data Quality SELALU tampilkan (bukan hanya saat trading)
+    data_quality_display = f"{data_quality.get('quality_grade', 'N/A')} ({data_quality.get('quality_score', 0)}%)"
+    
+    # Jika ada warnings, tampilkan
+    if data_quality.get("warnings"):
+        warnings_text = " | ".join(data_quality.get("warnings", []))
+        data_quality_display = f"{data_quality_display} | {warnings_text}"
     
     # Format berita dengan label
     berita_list = sentimen.get("berita_label", [])
