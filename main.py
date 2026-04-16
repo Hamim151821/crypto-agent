@@ -47,8 +47,22 @@ def get_crypto_price(nama_crypto):
         "vs_currencies": "idr,usd",
         "include_24hr_change": "true"
     }
-    response = requests.get(url, params=params)
-    return response.json()
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+        
+        # Validasi response
+        if not data or nama_crypto not in data:
+            return None
+        
+        # Validasi data lengkap
+        if not all(k in data[nama_crypto] for k in ['idr', 'usd']):
+            return None
+            
+        return data
+    except Exception as e:
+        print(f"Error get_crypto_price: {e}")
+        return None
 
 # ==============================
 # FUNGSI AMBIL DATA SAHAM
@@ -56,11 +70,32 @@ def get_crypto_price(nama_crypto):
 def get_stock_price(kode_saham):
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{kode_saham}"
     headers = {"User-Agent": "Mozilla/5.0"}
-    response = requests.get(url, headers=headers)
-    data = response.json()
-    price = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
-    currency = data["chart"]["result"][0]["meta"]["currency"]
-    return {"harga": price, "mata_uang": currency, "kode": kode_saham}
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        data = response.json()
+        
+        # Validasi response structure
+        if "chart" not in data or "result" not in data["chart"]:
+            return None
+            
+        result = data["chart"]["result"]
+        if not result:
+            return None
+            
+        meta = result[0].get("meta", {})
+        if not meta or "regularMarketPrice" not in meta:
+            return None
+            
+        price = meta["regularMarketPrice"]
+        currency = meta.get("currency", "USD")
+        
+        if not price or price <= 0:
+            return None
+            
+        return {"harga": price, "mata_uang": currency, "kode": kode_saham}
+    except Exception as e:
+        print(f"Error get_stock_price: {e}")
+        return None
 
 # ==============================
 # FUNGSI AMBIL BERITA CRYPTO
@@ -229,19 +264,39 @@ def get_crypto_indicators(nama_crypto):
         url = f"https://api.coingecko.com/api/v3/coins/{nama_crypto}/market_chart"
         # Ambil 300 hari untuk MA200
         params = {"vs_currency": "usd", "days": "300", "interval": "daily"}
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=30)
         data = response.json()
         
+        # Validasi response
+        if not data or "prices" not in data or not data["prices"]:
+            return None
+            
         prices = [x[1] for x in data.get("prices", [])]
         volumes = [x[1] for x in data.get("total_volumes", [])]
         
-        if not prices:
+        if not prices or len(prices) < 50:
             return None
+        
+        # Get high/low for ATR calculation if available
+        highs = None
+        lows = None
+        if "market_caps" not in data:
+            # If no highs/lows, estimate from close
+            highs = prices
+            lows = prices
+        else:
+            # Can't get high/low from coinGecko, use close as approximation
+            highs = prices
+            lows = prices
         
         df = pd.DataFrame({
             "close": prices,
-            "volume": volumes[:len(prices)] if volumes else [0] * len(prices)
+            "volume": volumes[:len(prices)] if volumes else [0] * len(prices),
+            "high": highs[:len(prices)] if highs else prices,
+            "low": lows[:len(prices)] if lows else prices
         })
+        
+        # === BASIC INDICATORS ===
         
         # RSI (14)
         df["rsi"] = ta.momentum.RSIIndicator(df["close"], window=14).rsi()
@@ -250,20 +305,67 @@ def get_crypto_indicators(nama_crypto):
         macd_ind = ta.trend.MACD(df["close"])
         df["macd"] = macd_ind.macd()
         df["macd_signal"] = macd_ind.macd_signal()
+        df["macd_histogram"] = df["macd"] - df["macd_signal"]
         
         # MA50 & MA200
         df["ma50"] = df["close"].rolling(window=50).mean()
         df["ma200"] = df["close"].rolling(window=200).mean()
+        df["ma20"] = df["close"].rolling(window=20).mean()
         
         # Volume moving average (20 hari)
         df["vol_avg"] = df["volume"].rolling(window=20).mean()
+        
+        # === ADVANCED INDICATORS ===
+        
+        # Bollinger Bands (20, 2)
+        bollinger = ta.volatility.BollingerBands(df["close"], window=20, window_dev=2)
+        df["bb_upper"] = bollinger.bollinger_hband()
+        df["bb_middle"] = bollinger.bollinger_mavg()
+        df["bb_lower"] = bollinger.bollinger_lband()
+        
+        # ATR (14) - Average True Range
+        df["atr"] = ta.volatility.AverageTrueRange(df["high"], df["low"], df["close"], window=14).average_true_range()
+        
+        # Stochastic Oscillator (14, 3, 3)
+        stoch = ta.momentum.StochasticOscillator(df["high"], df["low"], df["close"], window=14, smooth_window=3)
+        df["stoch_k"] = stoch.stoch()
+        df["stoch_d"] = stoch.stoch_signal()
+        
+        # ADX - Average Directional Index
+        df["adx"] = ta.trend.ADXIndicator(df["high"], df["low"], df["close"], window=14).adx()
+        
+        # OBV - On Balance Volume
+        df["obv"] = ta.volume.OnBalanceVolumeIndicator(df["close"], df["volume"]).on_balance_volume()
+        
+        # VWAP (approximation for daily)
+        df["vwap"] = (df["close"] * df["volume"]).rolling(window=20).sum() / df["volume"].rolling(window=20).sum()
         
         # Ambil nilai terakhir
         rsi = round(df["rsi"].iloc[-1], 2) if pd.notna(df["rsi"].iloc[-1]) else 50.0
         macd_val = round(df["macd"].iloc[-1], 4) if pd.notna(df["macd"].iloc[-1]) else 0
         macd_sig = round(df["macd_signal"].iloc[-1], 4) if pd.notna(df["macd_signal"].iloc[-1]) else 0
+        macd_hist = round(df["macd_histogram"].iloc[-1], 4) if pd.notna(df["macd_histogram"].iloc[-1]) else 0
         ma50 = round(df["ma50"].iloc[-1], 4) if pd.notna(df["ma50"].iloc[-1]) else None
         ma200 = round(df["ma200"].iloc[-1], 4) if pd.notna(df["ma200"].iloc[-1]) else None
+        ma20 = round(df["ma20"].iloc[-1], 4) if pd.notna(df["ma20"].iloc[-1]) else None
+        
+        # Bollinger Bands
+        bb_upper = round(df["bb_upper"].iloc[-1], 4) if pd.notna(df["bb_upper"].iloc[-1]) else None
+        bb_middle = round(df["bb_lower"].iloc[-1], 4) if pd.notna(df["bb_middle"].iloc[-1]) else None
+        bb_lower = round(df["bb_lower"].iloc[-1], 4) if pd.notna(df["bb_lower"].iloc[-1]) else None
+        
+        # ATR
+        atr = round(df["atr"].iloc[-1], 4) if pd.notna(df["atr"].iloc[-1]) else 0
+        
+        # Stochastic
+        stoch_k = round(df["stoch_k"].iloc[-1], 2) if pd.notna(df["stoch_k"].iloc[-1]) else 50.0
+        stoch_d = round(df["stoch_d"].iloc[-1], 2) if pd.notna(df["stoch_d"].iloc[-1]) else 50.0
+        
+        # ADX
+        adx = round(df["adx"].iloc[-1], 2) if pd.notna(df["adx"].iloc[-1]) else 0
+        
+        # VWAP
+        vwap = round(df["vwap"].iloc[-1], 4) if pd.notna(df["vwap"].iloc[-1]) else None
         
         current_vol = df["volume"].iloc[-1] if pd.notna(df["volume"].iloc[-1]) else 0
         avg_vol = df["vol_avg"].iloc[-1] if pd.notna(df["vol_avg"].iloc[-1]) else current_vol
@@ -273,6 +375,21 @@ def get_crypto_indicators(nama_crypto):
         support = round(recent_closes.min(), 4)
         resistance = round(recent_closes.max(), 4)
         current_price = round(df["close"].iloc[-1], 4)
+        
+        # Fibonacci Retracement levels
+        fib_high = max(recent_closes)
+        fib_low = min(recent_closes)
+        fib_range = fib_high - fib_low
+        fib_382 = round(fib_low + fib_range * 0.382, 4)
+        fib_500 = round(fib_low + fib_range * 0.500, 4)
+        fib_618 = round(fib_low + fib_range * 0.618, 4)
+        
+        # Pivot Points (Classic)
+        pivot = round((fib_high + fib_low + current_price) / 3, 4)
+        r1 = round(2 * pivot - fib_low, 4)
+        s1 = round(2 * pivot - fib_high, 4)
+        r2 = round(pivot + fib_range, 4)
+        s2 = round(pivot - fib_range, 4)
         
         # === INTERPRETASI ===
         
@@ -286,6 +403,9 @@ def get_crypto_indicators(nama_crypto):
         
         # MACD
         macd_status = "BULLISH" if macd_val > macd_sig else "BEARISH"
+        
+        # MACD Histogram direction
+        macd_hist_status = "MENGUAT" if macd_hist > 0 else "MELEMAH"
         
         # Trend (MA50 vs MA200)
         trend_status = "NEUTRAL"
@@ -304,17 +424,49 @@ def get_crypto_indicators(nama_crypto):
         else:
             volume_status = "NORMAL"
         
+        # Bollinger Band position
+        if current_price < bb_lower:
+            bb_position = "DI BAWAH LOWER BAND"
+        elif current_price > bb_upper:
+            bb_position = "DI ATAS UPPER BAND"
+        elif current_price > bb_middle:
+            bb_position = "UPPER HALF"
+        else:
+            bb_position = "LOWER HALF"
+        
+        # Stochastic
+        if stoch_k < 20:
+            stoch_status = "OVERSOLD"
+        elif stoch_k > 80:
+            stoch_status = "OVERBOUGHT"
+        else:
+            stoch_status = "NORMAL"
+        
+        # ADX - Trend strength
+        if adx > 25:
+            adx_status = "TREND KUAT"
+        elif adx > 15:
+            adx_status = "TREND MODERATE"
+        else:
+            adx_status = "TREND LEMAH"
+        
         # Market condition
         market_condition = detect_market_condition(df, ma50, ma200)
+        
+        # Data quality score
+        data_quality = min(100, (len(prices) / 300) * 100) if len(prices) < 300 else 100
         
         return {
             "rsi": rsi,
             "rsi_status": rsi_status,
             "macd": macd_val,
             "macd_signal": macd_sig,
+            "macd_histogram": macd_hist,
             "macd_status": macd_status,
+            "macd_hist_status": macd_hist_status,
             "ma50": ma50,
             "ma200": ma200,
+            "ma20": ma20,
             "trend_status": trend_status,
             "volume_current": round(current_vol, 2),
             "volume_avg": round(avg_vol, 2),
@@ -323,7 +475,30 @@ def get_crypto_indicators(nama_crypto):
             "support": support,
             "resistance": resistance,
             "current_price": current_price,
-            "market_condition": market_condition
+            "market_condition": market_condition,
+            # Advanced indicators
+            "bb_upper": bb_upper,
+            "bb_middle": bb_middle,
+            "bb_lower": bb_lower,
+            "bb_position": bb_position,
+            "atr": atr,
+            "stoch_k": stoch_k,
+            "stoch_d": stoch_d,
+            "stoch_status": stoch_status,
+            "adx": adx,
+            "adx_status": adx_status,
+            "vwap": vwap,
+            # Fibonacci & Pivot
+            "fib_382": fib_382,
+            "fib_500": fib_500,
+            "fib_618": fib_618,
+            "pivot": pivot,
+            "r1": r1,
+            "s1": s1,
+            "r2": r2,
+            "s2": s2,
+            # Data quality
+            "data_quality": data_quality
         }
     except Exception as e:
         print(f"⚠️ Error crypto indicators: {e}")
@@ -335,16 +510,23 @@ def get_crypto_indicators(nama_crypto):
 def get_stock_indicators(kode_saham):
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{kode_saham}"
-        # Ambil 1 tahun data untuk MA200
         params = {"interval": "1d", "range": "1y"}
         headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, params=params, headers=headers)
+        response = requests.get(url, params=params, headers=headers, timeout=30)
         data = response.json()
         
-        result = data["chart"]["result"][0]
-        quotes = result["indicators"]["quote"][0]
+        # Validasi response structure
+        if "chart" not in data or "result" not in data["chart"]:
+            return None
+            
+        result = data["chart"]["result"]
+        if not result:
+            return None
+            
+        result = result[0]
+        quotes = result.get("indicators", {}).get("quote", [{}])[0]
         
-        closes = quotes["close"]
+        closes = quotes.get("close", [])
         volumes = quotes.get("volume", [])
         highs = quotes.get("high", [])
         lows = quotes.get("low", [])
@@ -360,10 +542,12 @@ def get_stock_indicators(kode_saham):
                     "low": lows[i] if i < len(lows) and lows[i] is not None else closes[i]
                 })
         
-        if not valid_data:
+        if not valid_data or len(valid_data) < 50:
             return None
         
         df = pd.DataFrame(valid_data)
+        
+        # === BASIC INDICATORS ===
         
         # RSI (14)
         df["rsi"] = ta.momentum.RSIIndicator(df["close"], window=14).rsi()
@@ -372,20 +556,67 @@ def get_stock_indicators(kode_saham):
         macd_ind = ta.trend.MACD(df["close"])
         df["macd"] = macd_ind.macd()
         df["macd_signal"] = macd_ind.macd_signal()
+        df["macd_histogram"] = df["macd"] - df["macd_signal"]
         
         # MA50 & MA200
         df["ma50"] = df["close"].rolling(window=50).mean()
         df["ma200"] = df["close"].rolling(window=200).mean()
+        df["ma20"] = df["close"].rolling(window=20).mean()
         
         # Volume moving average (20 hari)
         df["vol_avg"] = df["volume"].rolling(window=20).mean()
+        
+        # === ADVANCED INDICATORS ===
+        
+        # Bollinger Bands (20, 2)
+        bollinger = ta.volatility.BollingerBands(df["close"], window=20, window_dev=2)
+        df["bb_upper"] = bollinger.bollinger_hband()
+        df["bb_middle"] = bollinger.bollinger_mavg()
+        df["bb_lower"] = bollinger.bollinger_lband()
+        
+        # ATR (14) - Average True Range
+        df["atr"] = ta.volatility.AverageTrueRange(df["high"], df["low"], df["close"], window=14).average_true_range()
+        
+        # Stochastic Oscillator (14, 3, 3)
+        stoch = ta.momentum.StochasticOscillator(df["high"], df["low"], df["close"], window=14, smooth_window=3)
+        df["stoch_k"] = stoch.stoch()
+        df["stoch_d"] = stoch.stoch_signal()
+        
+        # ADX - Average Directional Index
+        df["adx"] = ta.trend.ADXIndicator(df["high"], df["low"], df["close"], window=14).adx()
+        
+        # OBV - On Balance Volume
+        df["obv"] = ta.volume.OnBalanceVolumeIndicator(df["close"], df["volume"]).on_balance_volume()
+        
+        # VWAP
+        df["vwap"] = (df["close"] * df["volume"]).rolling(window=20).sum() / df["volume"].rolling(window=20).sum()
         
         # Ambil nilai terakhir
         rsi = round(df["rsi"].iloc[-1], 2) if pd.notna(df["rsi"].iloc[-1]) else 50.0
         macd_val = round(df["macd"].iloc[-1], 4) if pd.notna(df["macd"].iloc[-1]) else 0
         macd_sig = round(df["macd_signal"].iloc[-1], 4) if pd.notna(df["macd_signal"].iloc[-1]) else 0
+        macd_hist = round(df["macd_histogram"].iloc[-1], 4) if pd.notna(df["macd_histogram"].iloc[-1]) else 0
         ma50 = round(df["ma50"].iloc[-1], 4) if pd.notna(df["ma50"].iloc[-1]) else None
         ma200 = round(df["ma200"].iloc[-1], 4) if pd.notna(df["ma200"].iloc[-1]) else None
+        ma20 = round(df["ma20"].iloc[-1], 4) if pd.notna(df["ma20"].iloc[-1]) else None
+        
+        # Bollinger Bands
+        bb_upper = round(df["bb_upper"].iloc[-1], 4) if pd.notna(df["bb_upper"].iloc[-1]) else None
+        bb_middle = round(df["bb_middle"].iloc[-1], 4) if pd.notna(df["bb_middle"].iloc[-1]) else None
+        bb_lower = round(df["bb_lower"].iloc[-1], 4) if pd.notna(df["bb_lower"].iloc[-1]) else None
+        
+        # ATR
+        atr = round(df["atr"].iloc[-1], 4) if pd.notna(df["atr"].iloc[-1]) else 0
+        
+        # Stochastic
+        stoch_k = round(df["stoch_k"].iloc[-1], 2) if pd.notna(df["stoch_k"].iloc[-1]) else 50.0
+        stoch_d = round(df["stoch_d"].iloc[-1], 2) if pd.notna(df["stoch_d"].iloc[-1]) else 50.0
+        
+        # ADX
+        adx = round(df["adx"].iloc[-1], 2) if pd.notna(df["adx"].iloc[-1]) else 0
+        
+        # VWAP
+        vwap = round(df["vwap"].iloc[-1], 4) if pd.notna(df["vwap"].iloc[-1]) else None
         
         current_vol = df["volume"].iloc[-1] if pd.notna(df["volume"].iloc[-1]) else 0
         avg_vol = df["vol_avg"].iloc[-1] if pd.notna(df["vol_avg"].iloc[-1]) else current_vol
@@ -396,6 +627,21 @@ def get_stock_indicators(kode_saham):
         support = round(recent_low.min(), 4)
         resistance = round(recent_high.max(), 4)
         current_price = round(df["close"].iloc[-1], 4)
+        
+        # Fibonacci Retracement levels
+        fib_high = recent_high.max()
+        fib_low = recent_low.min()
+        fib_range = fib_high - fib_low
+        fib_382 = round(fib_low + fib_range * 0.382, 4)
+        fib_500 = round(fib_low + fib_range * 0.500, 4)
+        fib_618 = round(fib_low + fib_range * 0.618, 4)
+        
+        # Pivot Points (Classic)
+        pivot = round((fib_high + fib_low + current_price) / 3, 4)
+        r1 = round(2 * pivot - fib_low, 4)
+        s1 = round(2 * pivot - fib_high, 4)
+        r2 = round(pivot + fib_range, 4)
+        s2 = round(pivot - fib_range, 4)
         
         # === INTERPRETASI ===
         
@@ -409,6 +655,9 @@ def get_stock_indicators(kode_saham):
         
         # MACD
         macd_status = "BULLISH" if macd_val > macd_sig else "BEARISH"
+        
+        # MACD Histogram direction
+        macd_hist_status = "MENGUAT" if macd_hist > 0 else "MELEMAH"
         
         # Trend
         trend_status = "NEUTRAL"
@@ -427,17 +676,49 @@ def get_stock_indicators(kode_saham):
         else:
             volume_status = "NORMAL"
         
+        # Bollinger Band position
+        if current_price < bb_lower:
+            bb_position = "DI BAWAH LOWER BAND"
+        elif current_price > bb_upper:
+            bb_position = "DI ATAS UPPER BAND"
+        elif current_price > bb_middle:
+            bb_position = "UPPER HALF"
+        else:
+            bb_position = "LOWER HALF"
+        
+        # Stochastic
+        if stoch_k < 20:
+            stoch_status = "OVERSOLD"
+        elif stoch_k > 80:
+            stoch_status = "OVERBOUGHT"
+        else:
+            stoch_status = "NORMAL"
+        
+        # ADX - Trend strength
+        if adx > 25:
+            adx_status = "TREND KUAT"
+        elif adx > 15:
+            adx_status = "TREND MODERATE"
+        else:
+            adx_status = "TREND LEMAH"
+        
         # Market condition
         market_condition = detect_market_condition(df, ma50, ma200)
+        
+        # Data quality score
+        data_quality = min(100, (len(df) / 252) * 100) if len(df) < 252 else 100
         
         return {
             "rsi": rsi,
             "rsi_status": rsi_status,
             "macd": macd_val,
             "macd_signal": macd_sig,
+            "macd_histogram": macd_hist,
             "macd_status": macd_status,
+            "macd_hist_status": macd_hist_status,
             "ma50": ma50,
             "ma200": ma200,
+            "ma20": ma20,
             "trend_status": trend_status,
             "volume_current": round(current_vol, 2),
             "volume_avg": round(avg_vol, 2),
@@ -446,10 +727,34 @@ def get_stock_indicators(kode_saham):
             "support": support,
             "resistance": resistance,
             "current_price": current_price,
-            "market_condition": market_condition
+            "market_condition": market_condition,
+            # Advanced indicators
+            "bb_upper": bb_upper,
+            "bb_middle": bb_middle,
+            "bb_lower": bb_lower,
+            "bb_position": bb_position,
+            "atr": atr,
+            "stoch_k": stoch_k,
+            "stoch_d": stoch_d,
+            "stoch_status": stoch_status,
+            "adx": adx,
+            "adx_status": adx_status,
+            "vwap": vwap,
+            # Fibonacci & Pivot
+            "fib_382": fib_382,
+            "fib_500": fib_500,
+            "fib_618": fib_618,
+            "pivot": pivot,
+            "r1": r1,
+            "s1": s1,
+            "r2": r2,
+            "s2": s2,
+            # Data quality
+            "data_quality": data_quality
         }
     except Exception as e:
         print(f"⚠️ Error stock indicators: {e}")
+        return None
         return None
 
 # ==============================
@@ -912,6 +1217,151 @@ def calculate_position_size(modal, entry, sl, sinyal, market_condition="TRENDING
     size = risk_per_trade / risk_per_unit
     return round(size, 6)
 
+
+# ==============================
+# 11. PROFESSIONAL RISK METRICS
+# ==============================
+def calculate_risk_metrics(harga, entry, sl, tp, indikator, sinyal, modal, currency="USD"):
+    """
+    Calculate professional risk metrics:
+    - Risk/Reward Ratio (RR)
+    - Kelly Criterion (win rate estimation)
+    - Risk per trade (Rp/USD)
+    - Position value
+    - Max risk exposure
+    """
+    metrics = {}
+    
+    is_buy = "BUY" in sinyal
+    is_sell = "SELL" in sinyal
+    
+    if not is_buy and not is_sell:
+        return {
+            "rr_ratio": "-",
+            "risk_reward": 0,
+            "risk_amount": 0,
+            "reward_amount": 0,
+            "position_value": 0,
+            "kelly_pct": 0,
+            "max_risk_pct": 1.0,
+            "is_valid_rr": False
+        }
+    
+    # Risk and Reward calculation
+    risk_pct = abs(entry - sl) / entry * 100
+    
+    if is_buy:
+        reward_pct = abs(tp - entry) / entry * 100
+    else:  # SELL
+        reward_pct = abs(entry - tp) / entry * 100
+    
+    # RR Ratio
+    if risk_pct > 0:
+        rr = reward_pct / risk_pct
+        rr_ratio = f"1:{rr:.1f}"
+        is_valid_rr = rr >= 1.5
+    else:
+        rr = 0
+        rr_ratio = "N/A"
+        is_valid_rr = False
+    
+    # Risk and Reward in currency
+    risk_amount = abs(entry - sl)
+    reward_amount = abs(tp - entry)
+    
+    # Position value
+    if currency == "USD":
+        risk_amt_idr = risk_amount * 16000
+        position_value = modal
+    else:
+        risk_amt_idr = risk_amount
+        position_value = modal
+    
+    # Kelly Criterion (simplified - assumes 50% base win rate, adjusted by RR)
+    # Kelly % = WinRate - (LossRate / RR)
+    # For conservative estimate, assume 50% win rate
+    win_rate = 0.5
+    kelly_pct = win_rate - ((1 - win_rate) / rr) if rr > 0 else 0
+    kelly_pct = max(0, min(100, kelly_pct * 100))
+    
+    # Max risk exposure (1% of capital)
+    max_risk_pct = 1.0
+    
+    # Calculate position size for Kelly
+    risk_per_trade_pct = risk_pct
+    
+    return {
+        "rr_ratio": rr_ratio,
+        "risk_reward": round(rr, 2),
+        "risk_pct": round(risk_pct, 2),
+        "reward_pct": round(reward_pct, 2),
+        "risk_amount": round(risk_amount, 4),
+        "reward_amount": round(reward_amount, 4),
+        "position_value": position_value,
+        "kelly_pct": round(kelly_pct, 1),
+        "max_risk_pct": max_risk_pct,
+        "is_valid_rr": is_valid_rr,
+        "risk_per_trade_pct": round(risk_per_trade_pct, 2)
+    }
+
+
+# ==============================
+# 12. DATA QUALITY SCORE
+# ==============================
+def calculate_data_quality(indikator, berita):
+    """
+    Calculate data quality score based on:
+    - Indicator data completeness
+    - News availability
+    - Data freshness
+    """
+    score = 0
+    details = []
+    
+    # 1. Indicator quality (50%)
+    if indikator:
+        indicator_score = 50
+        
+        # Check data quality from indicator
+        dq = indikator.get("data_quality", 0)
+        if dq > 0:
+            indicator_score = dq / 2  # Max 50%
+        
+        # Additional checks
+        if indikator.get("ma50") and indikator.get("ma200"):
+            indicator_score += 10
+        if indikator.get("atr", 0) > 0:
+            indicator_score += 10
+        if indikator.get("adx", 0) > 0:
+            indicator_score += 10
+        
+        indicator_score = min(80, indicator_score)
+        score += indicator_score
+        details.append(f"Indikator: {indicator_score}%")
+    
+    # 2. News quality (30%)
+    if berita:
+        news_score = min(30, len(berita) * 10)
+        score += news_score
+        details.append(f"Berita: {news_score}%")
+    else:
+        details.append("Berita: 0%")
+    
+    # 3. Additional factors (20%)
+    if indikator:
+        if indikator.get("volume_ratio", 1) > 0:
+            score += 10
+        if indikator.get("current_price", 0) > 0:
+            score += 10
+    
+    score = min(100, score)
+    
+    return {
+        "quality_score": score,
+        "quality_grade": "A" if score >= 80 else "B" if score >= 60 else "C" if score >= 40 else "D",
+        "details": ", ".join(details)
+    }
+
 # ==============================
 # AI REASONING (LLM untuk alasan saja)
 # ==============================
@@ -1183,8 +1633,17 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
                            sinyal, total_skor, confidence, entry, sl, tp,
                            risk_level, rr_ratio, modal, position_size, alasan,
                            market_condition, skor_detail, weights, jenis, no_trade,
-                           is_early_entry=False):
+                           is_early_entry=False, risk_metrics=None, data_quality=None):
     """Format output sesuai template 10-point system"""
+    
+    # Default values
+    if risk_metrics is None:
+        risk_metrics = {
+            "rr_ratio": "-", "risk_reward": 0, "risk_pct": 0, "reward_pct": 0,
+            "kelly_pct": 0, "is_valid_rr": False
+        }
+    if data_quality is None:
+        data_quality = {"quality_score": 50, "quality_grade": "C", "details": "Data tidak tersedia"}
     
     # Currency tergantung jenis aset
     if jenis == "Crypto":
@@ -1261,10 +1720,18 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
         rr_ratio = "-"
         copy_trade_status = "NO TRADE"
         position_size_display = "-"
+        risk_reward_display = "-"
+        risk_pct_display = "-"
+        kelly_display = "-"
+        data_quality_display = "-"
     else:
         is_trade = "BUY" in sinyal or "SELL" in sinyal
         copy_trade_status = "OPEN" if is_trade else "-"
         position_size_display = f"{position_size:,.6f}"
+        risk_reward_display = str(risk_metrics.get("risk_reward", 0))
+        risk_pct_display = f"{risk_metrics.get('risk_pct', 0)}%"
+        kelly_display = f"{risk_metrics.get('kelly_pct', 0)}%"
+        data_quality_display = f"{data_quality.get('quality_grade', 'N/A')} ({data_quality.get('quality_score', 0)}%)"
     
     # Format berita dengan label
     berita_list = sentimen.get("berita_label", [])
@@ -1273,44 +1740,88 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
     else:
         berita_str = "Tidak ada berita signifikan"
     
-    output = f"""📊 ANALISIS {symbol.upper()}
+    # Advanced indicators display
+    bb_pos = indikator.get("bb_position", "N/A") if indikator else "N/A"
+    stoch = f"{indikator.get('stoch_k', 'N/A')}/{indikator.get('stoch_d', 'N/A')}" if indikator else "N/A"
+    stoch_status = indikator.get('stoch_status', 'N/A') if indikator else "N/A"
+    adx = indikator.get('adx', 0) if indikator else 0
+    adx_status = indikator.get('adx_status', 'N/A') if indikator else "N/A"
+    atr = indikator.get('atr', 0) if indikator else 0
+    vwap = indikator.get('vwap', 0) if indikator else 0
+    
+    # Fibonacci levels
+    fib_382 = indikator.get('fib_382', 0) if indikator else 0
+    fib_500 = indikator.get('fib_500', 0) if indikator else 0
+    fib_618 = indikator.get('fib_618', 0) if indikator else 0
+    
+    # Pivot Points
+    pivot = indikator.get('pivot', 0) if indikator else 0
+    r1 = indikator.get('r1', 0) if indikator else 0
+    s1 = indikator.get('s1', 0) if indikator else 0
+    
+    # Validasi RR
+    rr_valid_icon = "✓" if risk_metrics.get("is_valid_rr", False) else "✗"
+    
+    output = f"""📊 ANALISIS {symbol.upper()} | Data Quality: {data_quality_display}
 💰 Harga: {harga_display}
-🏪 Market: {market_condition}
+🏪 Market: {market_condition} | ADX: {adx} ({adx_status})
 
-📈 Teknikal:
-• RSI: {indikator.get('rsi', 'N/A')} → {indikator.get('rsi_status', 'N/A')} (skor: {skor_detail.get('rsi', 0)})
-• MACD: {indikator.get('macd_status', 'N/A')} (skor: {skor_detail.get('macd', 0)})
-• Trend: {indikator.get('trend_status', 'N/A')} | MA50: {ma50_str} | MA200: {ma200_str} (skor: {skor_detail.get('trend', 0)})
-• Volume: {indikator.get('volume_status', 'N/A')} (rasio: {indikator.get('volume_ratio', 'N/A')}x) (skor: {skor_detail.get('volume', 0)})
-• S/R: Support {s_display} | Resistance {r_display}
+═══════════════════════════════════════════════════════════════
+📈 INDIKATOR TEKNIKAL
+═══════════════════════════════════════════════════════════════
+• RSI (14):     {indikator.get('rsi', 'N/A')} → {indikator.get('rsi_status', 'N/A')} | Skor: {skor_detail.get('rsi', 0)}
+• MACD:         {indikator.get('macd_status', 'N/A')} | Histogram: {indikator.get('macd_hist_status', 'N/A')} | Skor: {skor_detail.get('macd', 0)}
+• Stochastic:   {stoch} → {stoch_status}
+• Bollinger:    {bb_pos}
+• Trend:        {indikator.get('trend_status', 'N/A')} | MA20: {ma50_str} | MA50: {ma50_str} | MA200: {ma200_str} | Skor: {skor_detail.get('trend', 0)}
+• Volume:       {indikator.get('volume_status', 'N/A')} (rasio: {indikator.get('volume_ratio', 'N/A')}x) | Skor: {skor_detail.get('volume', 0)}
+• ATR:          {atr:.4f} | VWAP: {vwap:.4f}
 
-📰 Sentimen:
+═══════════════════════════════════════════════════════════════
+🎯 LEVEL & TARGET
+═══════════════════════════════════════════════════════════════
+• S/R:          Support {s_display} | Resistance {r_display}
+• Fibonacci:    38.2%: {fib_382:.4f} | 50%: {fib_500:.4f} | 61.8%: {fib_618:.4f}
+• Pivot Points: PP: {pivot:.4f} | R1: {r1:.4f} | S1: {s1:.4f}
+
+═══════════════════════════════════════════════════════════════
+📰 SENTIMEN BERITA
+═══════════════════════════════════════════════════════════════
 {berita_str}
-• Status: {sentimen.get('status', 'N/A')}
-• Skor: {sentimen.get('skor', 0)}
+• Status: {sentimen.get('status', 'N/A')} | Skor: {sentimen.get('skor', 0)}
 • Dampak: {sentimen.get('dampak', 'N/A')}
 
-🎯 Sinyal: {sinyal_display}
-📊 Skor: {'+' if total_skor > 0 else ''}{total_skor}
-🔥 Confidence: {confidence:.0f}%{no_trade_warning}{early_entry_warning}{weights_note}
+═══════════════════════════════════════════════════════════════
+🎯 SIGNAL & SKOR
+═══════════════════════════════════════════════════════════════
+Sinyal: {sinyal_display}
+Skor Total: {'+' if total_skor > 0 else ''}{total_skor} (RSI:{skor_detail.get('rsi', 0)} + MACD:{skor_detail.get('macd', 0)} + Trend:{skor_detail.get('trend', 0)} + Volume:{skor_detail.get('volume', 0)} + Sentimen:{skor_detail.get('sentimen', 0)})
+Confidence: {confidence:.0f}%{no_trade_warning}{early_entry_warning}{weights_note}
 
-📌 Rekomendasi:
-• Entry: {entry_display}
-• SL: {sl_display}
-• TP: {tp_display}
-• Risk: {risk_level}
-• RR: {rr_ratio}
+═══════════════════════════════════════════════════════════════
+📊 RISK MANAGEMENT
+═══════════════════════════════════════════════════════════════
+• Entry:        {entry_display}
+• Stop Loss:    {sl_display} (Risk: {risk_pct_display})
+• Take Profit:  {tp_display}
+• Risk/Reward: {rr_ratio} | R:R = 1:{risk_reward_display} {rr_valid_icon}
+• Kelly:        {kelly_display}
+• Risk Level:  {risk_level}
 
-💼 Copy Trade:
-• Modal: Rp {modal:,.0f}
-• Size: {position_size_display}
-• Status: {copy_trade_status}
-• P/L: -
+═══════════════════════════════════════════════════════════════
+💼 POSITION SIZING
+═══════════════════════════════════════════════════════════════
+• Modal:        Rp {modal:,.0f}
+• Size:         {position_size_display}
+• Status:       {copy_trade_status}
 
-🧠 Alasan:
+═══════════════════════════════════════════════════════════════
+🧠 ANALISIS
+═══════════════════════════════════════════════════════════════
 {alasan}
 
-⚠️ Disclaimer: Bukan nasihat keuangan. Selalu lakukan riset sendiri dan kelola risiko dengan bijak."""
+═══════════════════════════════════════════════════════════════
+⚠️ DISCLAIMER: Bukan nasihat keuangan. Selalu lakukan riset sendiri dan kelola risiko dengan bijak."""
     
     return output
 
@@ -1595,6 +2106,12 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         tp = 0
         position_size = 0
     
+    # Calculate professional risk metrics
+    risk_metrics = calculate_risk_metrics(harga, entry, sl, tp, indikator, sinyal, modal, curr)
+    
+    # Calculate data quality
+    data_quality = calculate_data_quality(indikator, berita)
+    
     # AI Reasoning (LLM call — hanya untuk penjelasan)
     alasan = get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition)
     
@@ -1621,7 +2138,9 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         weights=weights,
         jenis=jenis,
         no_trade=no_trade,
-        is_early_entry=is_early_entry
+        is_early_entry=is_early_entry,
+        risk_metrics=risk_metrics,
+        data_quality=data_quality
     )
     
     analysis_data = {
