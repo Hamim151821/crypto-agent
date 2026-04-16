@@ -2119,6 +2119,18 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     # 4. Analisis Berita
     sentimen = analyze_news(berita, symbol)
     
+    # === VOLUME RATIO (SEBELUM SCORE) ===
+    volume_ratio = indikator.get("volume_ratio", 1.0)
+    
+    # === VOLUME CONFIRMATION FOR SENTIMENT (SEBELUM SCORE) ===
+    # Jika sentimen positif/negatif tapi Volume Ratio < 0.8x → downgrade ke NETRAL
+    sentimen_skor = sentimen.get("skor", 0)
+    if sentimen_skor != 0 and volume_ratio > 0:
+        if volume_ratio < 0.8:
+            sentimen["status"] = "NETRAL"
+            sentimen["skor"] = 0
+            sentimen["dampak"] = "News diabaikan pasar (Volume rendah)"
+    
     # 5. Calculate Scores (deterministik)
     skor_detail, total_skor = calculate_score(indikator, sentimen, weights, market_condition)
     
@@ -2222,17 +2234,6 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         # Jika tidak NETRAL tapi skor = 0 → ubah ke NETRAL
         sentimen["status"] = "NETRAL"
         sentimen["dampak"] = "Tidak ada sentimen signifikan"
-    
-    # === VOLUME CONFIRMATION FOR SENTIMENT ===
-    # Jika sentimen positif/negatif tapi Volume Ratio < 0.8x → downgrade ke NETRAL
-    # News must be validated by Volume
-    if sentimen_skor != 0 and volume_ratio > 0:
-        if volume_ratio < 0.8:
-            # Volume rendah - news tidak signifikan
-            sentimen["status"] = "NETRAL"
-            sentimen["skor"] = 0
-            sentimen["dampak"] = "News diabaikan pasar (Volume rendah)"
-            print("Validasi: Sentimen positif/negatif tapi Volume Ratio < 0.8x → Downgrade ke NETRAL")
     
     # Cek apakah ada berita untuk confidence adjustment
     has_news = berita and len(berita) > 0
