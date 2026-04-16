@@ -1327,71 +1327,40 @@ def detect_breakout_breakdown(indikator, market_condition):
 # 9. ENTRY / SL / TP CALCULATION (DYNAMIC RISK MANAGEMENT)
 # ==============================
 def calculate_entry_sl_tp(harga, sinyal, indikator):
-    """
-    Hitung Entry, Stop Loss, dan Take Profit dengan LOGIKA BARU:
-    
-    Entry = Last Close Price (atau sedikit di atas Resistance untuk breakout)
-    SL = Last Price - (1.5 × ATR) (pilih yang lebih besar dari Support - 2%)
-    TP = Nearest Resistance (R1)
-    
-    Risk/Reward: (TP - Entry) / (Entry - SL)
-    Jika RR < 1.5 → NO TRADE
-    """
     support = indikator.get("support", harga * 0.97)
     resistance = indikator.get("resistance", harga * 1.03)
-    r1 = indikator.get("r1", resistance)  # Nearest resistance
+    r1 = indikator.get("r1", resistance)
+    s1 = indikator.get("s1", support)
     atr = indikator.get("atr", 0)
-    market_condition = indikator.get("market_condition", "TRENDING")
     
-    is_buy = "BUY" in sinyal
-    is_sell = "SELL" in sinyal
+    is_buy = "BUY" in sinyal.upper()
+    is_sell = "SELL" in sinyal.upper()
     
-    # === DYNAMIC SL CALCULATION ===
-    if atr > 0:
-        # Gunakan ATR-based SL: Last Price - (1.5 × ATR)
-        atr_sl = harga - (1.5 * atr)
-        # Support-based SL: Support - 2%
-        support_sl = support * 0.98
-        # Pilih yang memberikan ruang lebih besar (tidak mudah tersapu)
-        if atr_sl > support_sl:
-            sl = atr_sl  # ATR SL lebih aman
-        else:
-            sl = support_sl  # Support SL lebih aman
-    else:
-        # Fallback: 3% dari harga
-        sl = harga * 0.97
+    if not is_buy and not is_sell:
+        return 0, 0, 0
     
-    # === ENTRY CALCULATION ===
+    entry = harga
+    sl = 0
+    tp = 0
+    
     if is_buy:
-        entry = harga  # Last close price
+        atr_sl = harga - (1.5 * atr) if atr > 0 else 0
+        support_sl = support * 0.98
+        sl = max(atr_sl, support_sl) if atr_sl > 0 else support_sl
+        
+        tp = r1 if r1 > entry else resistance
+        if tp <= entry: 
+            tp = entry * 1.05
+            
     elif is_sell:
-        entry = harga
-    else:  # HOLD - no position
-        return 0, 0, 0
-    
-    # === TP CALCULATION ===
-    # TP = Nearest Resistance (R1)
-    if r1 > entry:
-        tp = r1
-    else:
-        tp = resistance  # Fallback ke resistance utama
-    
-    # === RISK/REWARD CALCULATION ===
-    risk_amount = abs(entry - sl)
-    reward_amount = abs(tp - entry)
-    
-    if risk_amount > 0:
-        rr_ratio = reward_amount / risk_amount
-    else:
-        rr_ratio = 0
-    
-    # Validasi RR - jika < 1.5, tidak layak trading
-    is_valid = rr_ratio >= 1.5
-    
-    # Jika tidak valid, return 0 (NO TRADE)
-    if not is_valid:
-        return 0, 0, 0
-    
+        atr_sl = harga + (1.5 * atr) if atr > 0 else float('inf')
+        resistance_sl = resistance * 1.02
+        sl = min(atr_sl, resistance_sl) if atr_sl != float('inf') else resistance_sl
+        
+        tp = s1 if s1 < entry else support
+        if tp >= entry: 
+            tp = entry * 0.95
+            
     return round(entry, 4), round(sl, 4), round(tp, 4)
 
 # ==============================
@@ -1982,7 +1951,7 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
         no_trade_warning = "\n⛔ NO TRADE ZONE: Sideways + Volume lemah + Konflik indikator → Hindari entry!"
 
     # HOLD dengan bias
-    if sinyal == "HOLD":
+    if "HOLD" in sinyal.upper():
         if total_skor > 0:
             sinyal_display = "HOLD (Bullish Bias)"
         elif total_skor < 0:
@@ -2004,8 +1973,8 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
         else:
             early_entry_warning = ""
 
-# PRIORITAS UTAMA: Jika HOLD, wajib "-" semua
-    if sinyal == "HOLD":
+# PRIORITAS UTAMA: Jika HOLD atau Entry 0, wajib "-" semua
+    if "HOLD" in sinyal.upper() or entry == 0:
         entry_display = "-"
         sl_display = "-"
         tp_display = "-"
@@ -2330,7 +2299,7 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         confidence = 35
     
     # HOLD → maksimal 40%
-    if sinyal == "HOLD":
+    if "HOLD" in sinyal.upper():
         confidence = min(confidence, 40)
     
     # Jika ada konflik → max 45%
@@ -2415,7 +2384,7 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     vol_status = indikator.get("volume_status", "NORMAL")
     is_volume_rendah = vol_status == "RENDAH"
     
-    if sinyal == "HOLD":
+    if "HOLD" in sinyal.upper():
         risk_level = "LOW"
     elif is_strong_trend and not is_volatile:
         risk_level = "MEDIUM"
