@@ -2214,23 +2214,52 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         confidence = max(35, confidence - 10)
         print(f"Validasi: Data anomaly detected → Confidence diturunkan")
     
-    # 4. SIGNAL CONSISTENCY - Skor lemah harus HOLD
+    # 4. SIGNAL CONSISTENCY - Skor vs Sinyal
     # Skor -1 sampai +1 → HOLD
-    # Hanya BUY/SELL jika ada konfirmasi breakout/breakdown
+    # Skor ≥ +4 → BUY (hanya jika breakout)
+    # Skor ≤ -3 → SELL (hanya jika breakdown)
     if -1 <= total_skor <= 1:
         sinyal = "HOLD"
         is_early_entry = False
         print(f"Validasi: Skor lemah ({total_skor}) → HOLD")
-    elif total_skor >= 3 and not is_breakout:
-        # Skor kuat tapi belum breakout → HOLD (tidak ada EARLY)
+    elif total_skor >= 4 and not is_breakout:
+        # Skor kuat ≥4 tapi belum breakout → HOLD
         sinyal = "HOLD"
         is_early_entry = False
-        print(f"Validasi: Skor kuat tapi belum breakout → HOLD")
+        print(f"Validasi: Skor kuat ({total_skor}) tapi belum breakout → HOLD")
     elif total_skor <= -3 and not is_breakdown:
-        # Skor kuat tapi belum breakdown → HOLD (tidak ada EARLY)
+        # Skor kuat negative tapi belum breakdown → HOLD
         sinyal = "HOLD"
         is_early_entry = False
-        print(f"Validasi: Skor kuat tapi belum breakdown → HOLD")
+        print(f"Validasi: Skor negatif ({total_skor}) tapi belum breakdown → HOLD")
+    
+    # 4b. TREND CONSISTENCY VALIDATION - Harga vs MA
+    # Jika harga < MA50 dan MA200 → trend TIDAK BOLEH bullish
+    current_price = indikator.get("current_price", 0)
+    ma50 = indikator.get("ma50", 0)
+    ma200 = indikator.get("ma200", 0)
+    trend_status = indikator.get("trend_status", "NEUTRAL")
+    
+    if current_price > 0 and ma50 > 0 and ma200 > 0:
+        # Cek posisi harga vs MA
+        price_below_ma50 = current_price < ma50
+        price_below_ma200 = current_price < ma200
+        ma20 = indikator.get("ma20", 0)
+        
+        # Jika harga di bawah MA50 dan MA200 → trend harus bearish
+        if price_below_ma50 and price_below_ma200:
+            if "BULLISH" in trend_status:
+                trend_status = "BEARISH"
+                indikator["trend_status"] = "BEARISH"
+                print("Validasi: Harga di bawah MA50 & MA200 → Override trend ke BEARISH")
+        
+        # Cek MA structure
+        if ma20 > 0 and ma50 > 0 and ma200 > 0:
+            if ma20 < ma50 < ma200:
+                # Strong bearish structure
+                trend_status = "BEARISH"
+                indikator["trend_status"] = "BEARISH"
+                print("Validasi: MA20 < MA50 < MA200 → Strong BEARISH")
     
     # 5. RISK/REWARD VALIDATION - Jika tidak ada entry
     if sinyal == "HOLD" or entry == 0 or entry is None:
