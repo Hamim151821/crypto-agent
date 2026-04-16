@@ -1715,11 +1715,12 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
         sl_display = fmt_price(sl, curr)
         tp_display = fmt_price(tp, curr)
     
-    # Support/Resistance display
+# Support/Resistance display
     s_display = fmt_price(indikator.get("support"), curr)
     r_display = fmt_price(indikator.get("resistance"), curr)
     
-    # MA display
+    # MA display - MA20, MA50, MA200
+    ma20_str = fmt_price(indikator.get("ma20"), curr) if indikator.get("ma20") else "N/A"
     ma50_str = fmt_price(indikator.get("ma50"), curr) if indikator.get("ma50") else "N/A"
     ma200_str = fmt_price(indikator.get("ma200"), curr) if indikator.get("ma200") else "N/A"
     
@@ -1834,7 +1835,7 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
 • MACD:         {indikator.get('macd_status', 'N/A')} | Histogram: {indikator.get('macd_hist_status', 'N/A')} | Skor: {skor_detail.get('macd', 0)}
 • Stochastic:   {stoch} → {stoch_status}
 • Bollinger:    {bb_pos}
-• Trend:        {indikator.get('trend_status', 'N/A')} | MA20: {ma50_str} | MA50: {ma50_str} | MA200: {ma200_str} | Skor: {skor_detail.get('trend', 0)}
+• Trend:        {indikator.get('trend_status', 'N/A')} | MA20: {ma20_str} | MA50: {ma50_str} | MA200: {ma200_str} | Skor: {skor_detail.get('trend', 0)}
 • Volume:       {indikator.get('volume_status', 'N/A')} (rasio: {indikator.get('volume_ratio', 'N/A')}x) | Skor: {skor_detail.get('volume', 0)}
 • ATR:          {atr:.4f} | VWAP: {vwap:.4f}
 
