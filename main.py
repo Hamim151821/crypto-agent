@@ -98,6 +98,58 @@ def get_stock_price(kode_saham):
         return None
 
 # ==============================
+# FOREIGN FLOW DATA (Placeholder)
+# ==============================
+def get_foreign_flow(kode_saham):
+    """
+    Ambil data Net Foreign Buy/Sell (placeholder - perlu integrasi API nyata)
+    Untuk saat ini, return berdasarkan price action sebagai proxy
+    """
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{kode_saham}"
+        params = {"interval": "1d", "range": "5d"}
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        data = response.json()
+        
+        if "chart" not in data or "result" not in data["chart"]:
+            return None
+        
+        result = data["chart"]["result"]
+        if not result:
+            return None
+        
+        quotes = result[0].get("indicators", {}).get("quote", [{}])[0]
+        closes = quotes.get("close", [])
+        
+        if len(closes) < 2:
+            return None
+        
+        # Proxy: Harga naik = kemungkinan net foreign buy, harga turun = net sell
+        # Ini hanya pendekatan, untuk data sebenarnya perlu API khusus
+        recent_change = (closes[-1] - closes[0]) / closes[0] * 100 if closes[0] > 0 else 0
+        
+        if recent_change > 1:
+            net_flow = "Net Buy"
+            status = "Accumulation"
+        elif recent_change < -1:
+            net_flow = "Net Sell"
+            status = "Distribution"
+        else:
+            net_flow = "Net Neutral"
+            status = "Waiting"
+        
+        return {
+            "net_flow": net_flow,
+            "status": status,
+            "change_5d": round(recent_change, 2),
+            "available": True
+        }
+    except Exception as e:
+        print(f"Error get_foreign_flow: {e}")
+        return {"net_flow": "N/A", "status": "Data Tidak Tersedia", "available": False}
+
+# ==============================
 # FUNGSI AMBIL BERITA CRYPTO
 # ==============================
 def get_crypto_news(nama_crypto):
@@ -924,11 +976,18 @@ def analyze_news(berita, symbol):
         if label != "MAKRO":
             has_makro_only = False
             
-        labeled_berita.append({
+labeled_berita.append({
             "judul": b.get('judul', ''),
             "sumber": b.get('sumber', 'N/A'),
-            "label": label
+"label": label
         })
+    
+    # Deteksi berita BESAR yang mempengaruhi sentimen
+    big_news_keywords = [' wafat', 'meninggal', 'died', 'passed away', 'ceo resign', 'resign', 
+                       'peraturan', 'regulation', 'ban', 'prohibited', 'geopolitik', 'war',
+                       'scandal', 'fraud', 'investigation', 'akuisisi', 'merger']
+    
+    has_big_news = any(any(kw in b.get('judul', '').lower() for kw in big_news_keywords) for b in top_berita)
     
     # Override dampak jika hanya berita makro
     makro_override = "Dampak tidak langsung ke saham" if has_makro_only else None
@@ -1805,13 +1864,16 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
         risk_reward_display = "-"
         risk_pct_display = "-"
         kelly_display = "-"
+        sl_display = "-"
     else:
         is_trade = "BUY" in sinyal or "SELL" in sinyal
         copy_trade_status = "OPEN" if is_trade else "NO TRADE"
         position_size_display = f"{position_size:,.6f}"
         risk_reward_display = str(risk_metrics.get("risk_reward", 0))
-        risk_pct_display = f"{risk_metrics.get('risk_pct', 0)}%"
-        kelly_display = f"{risk_metrics.get('kelly_pct', 0)}%"
+        risk_pct_val = risk_metrics.get("risk_pct", 0)
+        risk_pct_display = f"{risk_pct_val}%" if risk_pct_val > 0 else "-"
+        kelly_val = risk_metrics.get("kelly_pct", 0)
+        kelly_display = f"{kelly_val}%" if kelly_val > 0 else "-"
     
     # Data Quality SELALU tampilkan (bukan hanya saat trading)
     data_score = data_quality.get("quality_score", 0)
