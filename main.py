@@ -255,12 +255,12 @@ def get_stock_news(kode_saham):
 def detect_market_condition(df, ma50, ma200):
     """
     Tentukan kondisi market dengan LOGIKA BARU:
-    1. Jika harga < MA20 DAN < MA50 DAN < MA200 → BEARISH (strict)
-    2. Jika harga > MA20 DAN > MA50 DAN > MA200 → BULLISH (strict)
-    3. Jika ADX < 20 → SIDEWAYS/CHOPPY
+    1. Jika ADX < 20 → SIDEWAYS/CHOPPY (PRIORITAS PERTAMA)
+    2. Jika harga < MA20 DAN < MA50 DAN < MA200 → BEARISH (strict)
+    3. Jika harga > MA20 DAN > MA50 DAN > MA200 → BULLISH (strict)
     4. Lainnya → berdasarkan MA50 vs MA200
     
-    Priority: Price Position > ADX > MA Crossover
+    Priority: ADX > Price Position > MA Crossover
     """
     if len(df) < 20:
         return "UNKNOWN"
@@ -276,21 +276,16 @@ def detect_market_condition(df, ma50, ma200):
     if "adx" in df.columns:
         adx = df["adx"].iloc[-1]
     
-    # === LOGIKA BARU: PRICE POSITION CHECK ===
-    # Jika harga di bawah SEMUA MA →pasti BEARISH
-    if current_price > 0 and ma20 is not None and ma50 is not None and ma200 is not None:
-        if current_price < ma20 and current_price < ma50 and current_price < ma200:
-            return "TRENDING DOWN"  # Strict bearish - harga di bawah semua MA
-    
-    # Jika harga di atas SEMUA MA →pasti BULLISH
-    if current_price > 0 and ma20 is not None and ma50 is not None and ma200 is not None:
-        if current_price > ma20 and current_price > ma50 and current_price > ma200:
-            return "TRENDING UP"  # Strict bullish - harga di atas semua MA
-    
-    # === ADX CHECK ===
-    # Jika ADX < 20 → SIDEWAYS/CHOPPY (tidak ada trend)
+    # === ADX CHECK PRIORITAS PERTAMA ===
     if adx is not None and adx < 20:
         return "SIDEWAYS (CHOPPY)"
+        
+    # === LOGIKA BARU: PRICE POSITION CHECK ===
+    if current_price > 0 and ma20 is not None and ma50 is not None and ma200 is not None:
+        if current_price < ma20 and current_price < ma50 and current_price < ma200:
+            return "TRENDING DOWN"  
+        if current_price > ma20 and current_price > ma50 and current_price > ma200:
+            return "TRENDING UP"  
     
     # === FALLBACK: MA CROSSOVER ===
     # Hitung volatilitas dari daily returns (std dev 20 hari terakhir)
@@ -1176,43 +1171,29 @@ def calculate_score(indikator, sentimen, weights, market_condition):
     scores["macd"] = 2 if macd_status == "BULLISH" else -2
     
     # Trend Score (PRICE vs MA - STRICT LOGIC)
-    # 1. Jika harga < MA20 DAN < MA50 DAN < MA200 → BEARISH = -3 (strict)
-    # 2. Jika harga > MA20 DAN > MA50 DAN > MA200 → BULLISH = +3 (strict)
-    # 3. Jika ADX < 20 → NEUTRAL = 0 (sideways)
-    # 4. Lainnya → gunakan trend_status
+    # Prioritas: Price Position (di bawah/diatas semua MA) > ADX > trend_status
     current_price = indikator.get("current_price", 0)
     ma20 = indikator.get("ma20", 0)
     ma50 = indikator.get("ma50", 0)
     ma200 = indikator.get("ma200", 0)
     adx = indikator.get("adx", 0)
     
-    # ADX < 20 → SIDEWAYS/CHOPPY → skor = 0
-    if adx > 0 and adx < 20:
-        scores["trend"] = 0
-    # Strict price position check
-    elif current_price > 0 and ma20 > 0 and ma50 > 0 and ma200 > 0:
+    if current_price > 0 and ma20 > 0 and ma50 > 0 and ma200 > 0:
+        # PRIORITAS TERTINGGI: Harga di bawah semua MA = mutlak bearish
         if current_price < ma20 and current_price < ma50 and current_price < ma200:
-            scores["trend"] = -3  # Strict bearish - harga di bawah semua MA
+            scores["trend"] = -3  # Mutlak bearish (Prioritas Tertinggi)
+        # PRIORITAS TERTINGGI: Harga di atas semua MA = mutlak bullish
         elif current_price > ma20 and current_price > ma50 and current_price > ma200:
-            scores["trend"] = 3   # Strict bullish - harga di atas semua MA
+            scores["trend"] = 3   # Mutlak bullish (Prioritas Tertinggi)
+        # ADX < 20 HANYA jika harga tersangkut di antara garis MA
+        elif adx > 0 and adx < 20:
+            scores["trend"] = 0   # Sideways HANYA jika harga tersangkut di antara garis MA
         else:
-            # Fallback ke trend_status
             trend_status = indikator.get("trend_status", "NEUTRAL")
-            if trend_status == "BULLISH":
-                scores["trend"] = 3
-            elif trend_status == "BEARISH":
-                scores["trend"] = -3
-            else:
-                scores["trend"] = 0
+            scores["trend"] = 3 if trend_status == "BULLISH" else -3 if trend_status == "BEARISH" else 0
     else:
-        # Fallback
         trend_status = indikator.get("trend_status", "NEUTRAL")
-        if trend_status == "BULLISH":
-            scores["trend"] = 3
-        elif trend_status == "BEARISH":
-            scores["trend"] = -3
-        else:
-            scores["trend"] = 0
+        scores["trend"] = 3 if trend_status == "BULLISH" else -3 if trend_status == "BEARISH" else 0
     
     # Volume Score — SMART LOGIC
     volume_status = indikator.get("volume_status", "NORMAL")
