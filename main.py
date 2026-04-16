@@ -982,11 +982,11 @@ def analyze_news(berita, symbol):
         
         if label != "MAKRO":
             has_makro_only = False
-            
-labeled_berita.append({
+        
+        labeled_berita.append({
             "judul": b.get('judul', ''),
             "sumber": b.get('sumber', 'N/A'),
-"label": label
+            "label": label
         })
     
     # Deteksi berita BESAR yang mempengaruhi sentimen
