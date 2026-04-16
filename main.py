@@ -1,4 +1,4 @@
-from openai import OpenAI
+﻿from openai import OpenAI
 import requests
 from dotenv import load_dotenv
 import os
@@ -1314,9 +1314,11 @@ def calculate_data_quality(indikator, berita):
     - Indicator data completeness
     - News availability
     - Data freshness
+    - Data anomaly detection (MA flat, etc.)
     """
     score = 0
     details = []
+    warnings = []
     
     # 1. Indicator quality (50%)
     if indikator:
@@ -1338,6 +1340,35 @@ def calculate_data_quality(indikator, berita):
         indicator_score = min(80, indicator_score)
         score += indicator_score
         details.append(f"Indikator: {indicator_score}%")
+        
+        # === DATA ANOMALY CHECK ===
+        
+        # Check MA flat (MA20 ≈ MA50)
+        ma20 = indikator.get("ma20", 0)
+        ma50 = indikator.get("ma50", 0)
+        if ma20 and ma50 and ma20 != 0 and ma50 != 0:
+            ma_diff_pct = abs(ma20 - ma50) / ma50 * 100
+            if ma_diff_pct < 0.5:  # Less than 0.5% difference
+                warnings.append("MA20 ≈ MA50 (flat trend)")
+                score = max(0, score - 15)
+        
+        # Check price position vs MA
+        current_price = indikator.get("current_price", 0)
+        ma200 = indikator.get("ma200", 0)
+        if current_price and ma50 and ma200 and ma200 != 0:
+            if current_price < ma50 and current_price < ma200:
+                # Already bearish, verify trend consistency
+                pass
+            elif current_price > ma50 and current_price > ma200:
+                # Already bullish, verify trend consistency
+                pass
+        
+        # Check if ADX exists but trend is unclear
+        adx = indikator.get("adx", 0)
+        trend_status = indikator.get("trend_status", "NEUTRAL")
+        if adx > 25 and trend_status == "NEUTRAL":
+            warnings.append("ADX tinggi tapi trend NETRAL (inkonsistensi)")
+            score = max(0, score - 10)
     
     # 2. News quality (30%)
     if berita:
@@ -1356,10 +1387,16 @@ def calculate_data_quality(indikator, berita):
     
     score = min(100, score)
     
+    # Determine grade with warning
+    grade = "A" if score >= 80 else "B" if score >= 60 else "C" if score >= 40 else "D"
+    if warnings:
+        grade = f"WARNING ({grade})"
+    
     return {
         "quality_score": score,
-        "quality_grade": "A" if score >= 80 else "B" if score >= 60 else "C" if score >= 40 else "D",
-        "details": ", ".join(details)
+        "quality_grade": grade,
+        "details": ", ".join(details),
+        "warnings": warnings
     }
 
 # ==============================
@@ -1497,7 +1534,7 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     elif is_vol_tinggi and is_bullish_trend:
         volume_confirm = "volume tinggi mengkonfirmasi kekuatan tren naik"
     
-    # Build confirmation status text
+# Build confirmation status text
     confirmation_status = ""
     if is_breakout:
         confirmation_status = "BREAKOUT terkonfirmasi - harga di atas resistance dengan volume tinggi"
@@ -1508,84 +1545,73 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     else:
         confirmation_status = "Belum ada konfirmasi breakout/breakdown"
     
+    # === ADDITIONAL DATA FOR BETTER ANALYSIS ===
+    adx = indikator.get("adx", 0)
+    adx_status = indikator.get("adx_status", "TREND LEMAH")
+    ma20 = indikator.get("ma20", 0)
+    ma50 = indikator.get("ma50", 0)
+    ma200 = indikator.get("ma200", 0)
+    stoch_k = indikator.get("stoch_k", 50)
+    rsi = indikator.get("rsi", 50)
+    
+    # Determine trend direction explicitly
+    trend_direction = "NETRAL"
+    if current_price > ma50 and ma50 > ma200:
+        trend_direction = "BULLISH (dominan)"
+    elif current_price < ma50 and ma50 < ma200:
+        trend_direction = "BEARISH (dominan)"
+    elif ma50 > ma200:
+        trend_direction = "BULLISH (terbalik)"
+    elif ma50 < ma200:
+        trend_direction = "BEARISH (terbalik)"
+    
     prompt = f"""Kamu adalah AI Trading Analyst profesional. Berikan ALASAN SINGKAT (maksimal 2 kalimat) dalam Bahasa Indonesia.
 
-KONFLIK: {conflict_text}
-SINYAL: {sinyal}
-SKOR: {total_skor}
-STRUKTUR TREND: {trend_structure}
-POSISI HARGA: {posisi_harga} | MA50: {ma50}
-SENTIMEN: {sent_status}
-VOLUME: {volume_confirm}
+DATA ANALISIS:
+- Harga saat ini: {current_price}
+- Trend: {trend_direction} | ADX: {adx} ({adx_status})
+- MA20: {ma20} | MA50: {ma50} | MA200: {ma200}
+- RSI: {rsi} | Stochastic: {stoch_k}
+- Volume: {vol_status} | MACD: {macd_status}
+- Sinyal: {sinyal} | Skor: {total_skor}
+- Konflik: {conflict_text}
 
-PEDOMAN:
-1. Jika BUY: jelaskan struktur trend (kuat/lemah), posisi harga vs MA
-2. Jika SELL: jelaskan tekanan bearish dan kelemahan
-3. Jika HOLD dengan BULLISH BIAS: jelaskan:
-   - "konsolidasi dalam uptrend" atau "pullback dalam trend bullish"
-   - posisi harga vs MA50
-- volume sebagai konfirmasi
- 4. WAJIB gunakan angka real untuk skenario:
-    - BUY jika breakout di atas {breakout_with_buffer} (+buffer dari {resistance_fmt})
-    - SELL jika breakdown di bawah {breakdown_with_buffer} (-buffer dari {support_fmt})
- 5. Sentimen hanya pelengkap, bukan faktor utama
- 3. Jika SELL: WAJIB sebutkan alasan utama dan tambahkan "meskipun ada risiko X, sinyal utama tetap SELL"
- 4. Jika HOLD: WAJIB gunakan level S/R sebagai acuan utama:
-    - "Breakout di atas {breakout_fmt} (±2% dari {resistance_fmt}) → potensi BUY"
-    - "Breakdown di bawah {breakout_fmt} (±2% dari {support_fmt}) → potensi SELL"
- 5. Jika volume tinggi + trend bearish → WAJIB tulis: "volume tinggi mengkonfirmasi tekanan jual"
- 6. Jika volume tinggi + trend bullish → WAJIB tulis: "volume tinggi mengkonfirmasi kekuatan tren naik"
- 7. VALIDASI SENTIMEN:
-    - DILARANG: Menyebut "didukung sentimen" jika sentimen NETRAL
-    - DILARANG: Menyebut faktor yang tidak ada di data
-    - WAJIB: Jika netral → tulis "tanpa dukungan sentimen kuat"
- 8. WAJIB sebutkan posisi harga terhadap S/R dalam alasan:
-    - Dekat support → potensi rebound
-    - Dekat resistance → potensi rejection
-    - Di tengah range → WAJIB disebut "area range" atau "area konsolidasi"
- 9. Jika HOLD: WAJIB jelaskan ALASAN SPESIFIK mengapa tidak entry:
-    - WAJIB menyebut MINIMAL 2 faktor utama (trend + momentum + volume)
-    - Jika volume rendah → "volume rendah → konfirmasi belum memadai"
-    - Jika tidak ada konfirmasi → "belum ada konfirmasi breakout"
-    - Jika RR tidak menarik → "risk/reward tidak memadai"
-    - Jika harga di tengah range → "harga di area konsolidasi → no trade zone"
-    - WAJIB gunakan format: "HOLD karena [faktor1] dan [faktor2]. Kondisi: {posisi_harga}. Strategi: tunggu konfirmasi breakout atau breakdown"
-10. WAJIB ADA TRADING SCENARIO dengan ANGKA dan BUFFER (anti false breakout):
-    - Buffer 1-2% dari level S/R untuk validasi
-    - Format wajib:
-      "Skenario:
-      • BUY jika breakout di atas {breakout_with_buffer} (+1-2% buffer dari {resistance_fmt}) dengan volume meningkat
-      • SELL jika breakdown di bawah {breakdown_with_buffer} (-1-2% buffer dari {support_fmt}) dengan volume meningkat
-      • Selain itu: tetap HOLD"
-    - DILARANG membuat skenario tanpa level harga konkret
-11. Jika sinyal adalah BUY (EARLY) atau SELL (EARLY): WAJIB tulis bahwa ini early entry dan butuh konfirmasi breakout/breakdown
-12. JANGAN pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
-13. Hindari bahasa lemah seperti "tunggu area jelas" → gunakan "menunggu konfirmasi breakout atau breakdown"
-14. DILARANG menentukan level jauh dari S/R
+ATURAN WAJIB:
+1. JIKA ADX > 25 (trend kuat):
+   - TIDAK BOLEH bilang "konsolidasi" atau "trend tidak jelas"
+   - Jika HOLD → jelaskan "menunggu pullback ke area support/resistance"
+   
+2. JIKA HARGA DI BAWAH MA50 & MA200:
+   - Tegaskan DOMINASI BEARISH
+   - Tidak boleh netral atau ambigu
+   
+3. JIKA HOLD:
+   - WAJIB sebutkan ALASAN SPESIFIK:
+     * "volume rendah → konfirmasi belum memadai" (bukan hanya "tidak ada sinyal")
+     * "menunggu pullback ke MA50" (jika ADX tinggi)
+     * "harga di area konsolidasi, tunggu breakout" (jika di tengah range)
+   - TIDAK BOLEH: "menunggu konfirmasi" saja tanpa konteks
+   
+4. SCENARIO HARUS PRESISI:
+   - BUY: {breakout_fmt} (+2% dari {resistance_fmt})
+   - SELL: {breakdown_fmt} (-2% dari {support_fmt})
+   - Gunakan angka real, bukan random
 
-TIPE SIGNAL WAJIB DIKENALI:
-- BUY (CONFIRMED): Harga sudah breakout di atas resistance dengan volume tinggi → langsung BUY
-- BUY (EARLY): Harga belum breakout tapi momentum bullish → tunggu breakout untuk konfirmasi
-- SELL (CONFIRMED): Harga sudah breakdown di bawah support dengan volume tinggi → langsung SELL
-- SELL (EARLY): Harga belum breakdown tapi momentum bearish → tunggu breakdown untuk konfirmasi
-- HOLD: Belum ada konfirmasi atau ada konflik indikator
+5. ANALISIS WAJIB MENJELASKAN:
+   - Posisi harga vs MA (di atas/di bawah)
+   - Kekuatan trend (ADX)
+   - Peran volume (meningkat/menurun)
+   - Mengapa BELUM bisa entry (bukan hanya "belum ada sinyal")
 
-CONTOH OUTPUT BUY (CONFIRMED):
-"Breakout di atas {resistance_fmt} dengan volume tinggi mengkonfirmasi uptrend. Meskipun ada risiko koreksi minor, sinyal utama tetap BUY dengan konfirmasi breakout."
+6. RISK MANAGEMENT:
+   - Jika NO TRADE → "R:R = N/A (No Position)" bukan "1:-"
+   
+7. TIDAK BOLEH:
+   - "menunggu konfirmasi" tanpa konteks
+   - "risiko tinggi" tanpa alasan spesifik
+   - Bilang "didukung sentimen" jika NETRAL
 
-CONTOH OUTPUT BUY (EARLY):
-"Belum ada breakout di atas {breakout_fmt}, tapi struktur trend bullish. Tunggu konfirmasi breakout dengan volume sebelum entry."
-
-CONTOH OUTPUT SELL (CONFIRMED):
-"Breakdown di bawah {support_fmt} dengan volume tinggi mengkonfirmasi downtrend. Meskipun ada potensi bounce, sinyal utama tetap SELL dengan konfirmasi breakdown."
-
-CONTOH OUTPUT SELL (EARLY):
-"Belum ada breakdown di bawah {breakdown_fmt}, tapi tekanan bearish terlihat. Tunggu konfirmasi breakdown dengan volume sebelum entry."
-
-CONTOH OUTPUT HOLD:
-"HOLD karena {conflict_text}. Kondisi: {posisi_harga}. Skenario: BUY jika breakout di atas {breakout_with_buffer} dengan volume meningkat, SELL jika breakdown di bawah {breakdown_with_buffer} dengan volume meningkat, selain itu tetap HOLD."
-
-Jawab maksimal 2 kalimat (tapi skenario wajib dicantumkan dalam format yang jelas)."""
+Jawab maksimal 2 kalimat dengan skenario konkret."""
     
     try:
         response = client.chat.completions.create(
@@ -1766,9 +1792,9 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
 💰 Harga: {harga_display}
 🏪 Market: {market_condition} | ADX: {adx} ({adx_status})
 
-═══════════════════════════════════════════════════════════════
+============================================================
 📈 INDIKATOR TEKNIKAL
-═══════════════════════════════════════════════════════════════
+============================================================
 • RSI (14):     {indikator.get('rsi', 'N/A')} → {indikator.get('rsi_status', 'N/A')} | Skor: {skor_detail.get('rsi', 0)}
 • MACD:         {indikator.get('macd_status', 'N/A')} | Histogram: {indikator.get('macd_hist_status', 'N/A')} | Skor: {skor_detail.get('macd', 0)}
 • Stochastic:   {stoch} → {stoch_status}
@@ -1777,30 +1803,30 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
 • Volume:       {indikator.get('volume_status', 'N/A')} (rasio: {indikator.get('volume_ratio', 'N/A')}x) | Skor: {skor_detail.get('volume', 0)}
 • ATR:          {atr:.4f} | VWAP: {vwap:.4f}
 
-═══════════════════════════════════════════════════════════════
+============================================================
 🎯 LEVEL & TARGET
-═══════════════════════════════════════════════════════════════
+============================================================
 • S/R:          Support {s_display} | Resistance {r_display}
 • Fibonacci:    38.2%: {fib_382:.4f} | 50%: {fib_500:.4f} | 61.8%: {fib_618:.4f}
 • Pivot Points: PP: {pivot:.4f} | R1: {r1:.4f} | S1: {s1:.4f}
 
-═══════════════════════════════════════════════════════════════
+============================================================
 📰 SENTIMEN BERITA
-═══════════════════════════════════════════════════════════════
+============================================================
 {berita_str}
 • Status: {sentimen.get('status', 'N/A')} | Skor: {sentimen.get('skor', 0)}
 • Dampak: {sentimen.get('dampak', 'N/A')}
 
-═══════════════════════════════════════════════════════════════
+============================================================
 🎯 SIGNAL & SKOR
-═══════════════════════════════════════════════════════════════
+============================================================
 Sinyal: {sinyal_display}
 Skor Total: {'+' if total_skor > 0 else ''}{total_skor} (RSI:{skor_detail.get('rsi', 0)} + MACD:{skor_detail.get('macd', 0)} + Trend:{skor_detail.get('trend', 0)} + Volume:{skor_detail.get('volume', 0)} + Sentimen:{skor_detail.get('sentimen', 0)})
 Confidence: {confidence:.0f}%{no_trade_warning}{early_entry_warning}{weights_note}
 
-═══════════════════════════════════════════════════════════════
+============================================================
 📊 RISK MANAGEMENT
-═══════════════════════════════════════════════════════════════
+============================================================
 • Entry:        {entry_display}
 • Stop Loss:    {sl_display} (Risk: {risk_pct_display})
 • Take Profit:  {tp_display}
@@ -1808,19 +1834,19 @@ Confidence: {confidence:.0f}%{no_trade_warning}{early_entry_warning}{weights_not
 • Kelly:        {kelly_display}
 • Risk Level:  {risk_level}
 
-═══════════════════════════════════════════════════════════════
+============================================================
 💼 POSITION SIZING
-═══════════════════════════════════════════════════════════════
+============================================================
 • Modal:        Rp {modal:,.0f}
 • Size:         {position_size_display}
 • Status:       {copy_trade_status}
 
-═══════════════════════════════════════════════════════════════
+============================================================
 🧠 ANALISIS
-═══════════════════════════════════════════════════════════════
+============================================================
 {alasan}
 
-═══════════════════════════════════════════════════════════════
+============================================================
 ⚠️ DISCLAIMER: Bukan nasihat keuangan. Selalu lakukan riset sendiri dan kelola risiko dengan bijak."""
     
     return output
