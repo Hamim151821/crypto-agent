@@ -779,7 +779,7 @@ def calculate_score(indikator, sentimen, weights, market_condition):
     return scores, round(total, 1)
 
 # ==============================
-# 8. NO TRADE ZONE
+# 8. NO TRADE ZONE & BREAKOUT DETECTION
 # ==============================
 def detect_no_trade_zone(indikator, skor_detail):
     """
@@ -797,6 +797,45 @@ def detect_no_trade_zone(indikator, skor_detail):
         return True
     
     return False
+
+
+def detect_breakout_breakdown(indikator, market_condition):
+    """
+    Deteksi breakout (buy confirmation) atau breakdown (sell confirmation)
+    
+    BREAKOUT (BUY confirmation):
+    - Harga menembus resistance + volume tinggi
+    
+    BREAKDOWN (SELL confirmation):
+    - Harga menembus support + volume tinggi
+    
+    Returns: "breakout", "breakdown", atau "none"
+    """
+    current_price = indikator.get("current_price", 0)
+    support = indikator.get("support", 0)
+    resistance = indikator.get("resistance", 0)
+    volume_status = indikator.get("volume_status", "NORMAL")
+    vol_ratio = indikator.get("volume_ratio", 1.0)
+    
+    if current_price <= 0 or support <= 0 or resistance <= 0:
+        return "none"
+    
+    # Buffer untuk breakout/breakdown (2% dari S/R)
+    breakout_threshold = resistance * 1.02
+    breakdown_threshold = support * 0.98
+    
+    # Volume tinggi atau meningkat (>1.2x rata-rata)
+    is_volume_confirmed = volume_status == "TINGGI" or vol_ratio > 1.2
+    
+    # Deteksi breakout (harga di atas resistance dengan volume)
+    if current_price >= breakout_threshold and is_volume_confirmed:
+        return "breakout"
+    
+    # Deteksi breakdown (harga di bawah support dengan volume)
+    if current_price <= breakdown_threshold and is_volume_confirmed:
+        return "breakdown"
+    
+    return "none"
 
 # ==============================
 # 9. ENTRY / SL / TP CALCULATION
@@ -883,10 +922,11 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     - Jika konflik, sebutkan konflik sebenarnya
     - Jika HOLD, kasih trigger actionable
     - Jika BUY/SELL, nada pasti
+    - Include breakout status untuk konfirmasi
     """
     # Extract trend structure and MA50 from indikator
     ma50 = indikator.get("ma50", 0)
-    current_price = indikator.get("price", 0)
+    current_price = indikator.get("current_price", 0)
     trend_structure = "netral"
     if market_condition.startswith("TRENDING UP"):
         if current_price > 0 and ma50 > 0 and current_price < ma50:
@@ -904,6 +944,13 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     trend_status = indikator.get("trend_status", "N/A")
     vol_status = indikator.get("volume_status", "N/A")
     sent_status = sentimen.get("status", "NETRAL")
+    
+    # Deteksi breakout status
+    breakout_status = detect_breakout_breakdown(indikator, market_condition)
+    is_breakout = breakout_status == "breakout"
+    is_breakdown = breakout_status == "breakdown"
+    is_early_entry = "EARLY" in sinyal
+    is_confirmed = "CONFIRMED" in sinyal
     
     # === DETEKSI KONFLIK (JIKA TREND TIDAK JELAS) ===
     # Jika trend jelas dominan → TIDAK ADA konflik, trend yang menentukan
@@ -962,7 +1009,6 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     breakdown_fmt = fmt_price(breakdown_level, curr)
     
     # === ANALISIS POSISI HARGA TERHADAP S/R DAN MA ===
-    current_price = indikator.get("price", 0)
     ma50 = indikator.get("ma50", 0)
     
     # Validasi struktur trend
@@ -981,7 +1027,6 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
         elif current_price >= resistance * 0.98:
             posisi_harga = "dekat resistance → potensi rejection"
         elif current_price > support * 1.02 and current_price < resistance * 0.98:
-            # Jika trend bullish tapi di tengah range
             if market_condition.startswith("TRENDING UP"):
                 posisi_harga = "di tengah range dalam trend bullish → konsolidasi"
             else:
@@ -1002,6 +1047,17 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     elif is_vol_tinggi and is_bullish_trend:
         volume_confirm = "volume tinggi mengkonfirmasi kekuatan tren naik"
     
+    # Build confirmation status text
+    confirmation_status = ""
+    if is_breakout:
+        confirmation_status = "BREAKOUT terkonfirmasi - harga di atas resistance dengan volume tinggi"
+    elif is_breakdown:
+        confirmation_status = "BREAKDOWN terkonfirmasi - harga di bawah support dengan volume tinggi"
+    elif is_early_entry:
+        confirmation_status = "EARLY ENTRY - belum ada breakout/breakdown, tunggu konfirmasi"
+    else:
+        confirmation_status = "Belum ada konfirmasi breakout/breakdown"
+    
     prompt = f"""Kamu adalah AI Trading Analyst profesional. Berikan ALASAN SINGKAT (maksimal 2 kalimat) dalam Bahasa Indonesia.
 
 KONFLIK: {conflict_text}
@@ -1018,32 +1074,32 @@ PEDOMAN:
 3. Jika HOLD dengan BULLISH BIAS: jelaskan:
    - "konsolidasi dalam uptrend" atau "pullback dalam trend bullish"
    - posisi harga vs MA50
-   - volume sebagai konfirmasi
-4. WAJIB gunakan angka real untuk skenario:
-   - BUY jika breakout di atas {breakout_with_buffer} (+buffer dari {resistance_fmt})
-   - SELL jika breakdown di bawah {breakdown_with_buffer} (-buffer dari {support_fmt})
-5. Sentimen hanya pelengkap, bukan faktor utama
-3. Jika SELL: WAJIB sebutkan alasan utama dan tambahkan "meskipun ada risiko X, sinyal utama tetap SELL"
-4. Jika HOLD: WAJIB gunakan level S/R sebagai acuan utama:
-   - "Breakout di atas {breakout_fmt} (±2% dari {resistance_fmt}) → potensi BUY"
-   - "Breakdown di bawah {breakdown_fmt} (±2% dari {support_fmt}) → potensi SELL"
-5. Jika volume tinggi + trend bearish → WAJIB tulis: "volume tinggi mengkonfirmasi tekanan jual"
-6. Jika volume tinggi + trend bullish → WAJIB tulis: "volume tinggi mengkonfirmasi kekuatan tren naik"
-7. VALIDASI SENTIMEN:
-   - DILARANG: Menyebut "didukung sentimen" jika sentimen NETRAL
-   - DILARANG: Menyebut faktor yang tidak ada di data
-   - WAJIB: Jika netral → tulis "tanpa dukungan sentimen kuat"
-8. WAJIB sebutkan posisi harga terhadap S/R dalam alasan:
-   - Dekat support → potensi rebound
-   - Dekat resistance → potensi rejection
-   - Di tengah range → WAJIB disebut "area range" atau "area konsolidasi"
-9. Jika HOLD: WAJIB jelaskan ALASAN SPESIFIK mengapa tidak entry:
-   - WAJIB menyebut MINIMAL 2 faktor utama (trend + momentum + volume)
-   - Jika volume rendah → "volume rendah → konfirmasi belum memadai"
-   - Jika tidak ada konfirmasi → "belum ada konfirmasi breakout"
-   - Jika RR tidak menarik → "risk/reward tidak memadai"
-   - Jika harga di tengah range → "harga di area konsolidasi → no trade zone"
-   - WAJIB gunakan format: "HOLD karena [faktor1] dan [faktor2]. Kondisi: {posisi_harga}. Strategi: tunggu konfirmasi breakout atau breakdown"
+- volume sebagai konfirmasi
+ 4. WAJIB gunakan angka real untuk skenario:
+    - BUY jika breakout di atas {breakout_with_buffer} (+buffer dari {resistance_fmt})
+    - SELL jika breakdown di bawah {breakdown_with_buffer} (-buffer dari {support_fmt})
+ 5. Sentimen hanya pelengkap, bukan faktor utama
+ 3. Jika SELL: WAJIB sebutkan alasan utama dan tambahkan "meskipun ada risiko X, sinyal utama tetap SELL"
+ 4. Jika HOLD: WAJIB gunakan level S/R sebagai acuan utama:
+    - "Breakout di atas {breakout_fmt} (±2% dari {resistance_fmt}) → potensi BUY"
+    - "Breakdown di bawah {breakout_fmt} (±2% dari {support_fmt}) → potensi SELL"
+ 5. Jika volume tinggi + trend bearish → WAJIB tulis: "volume tinggi mengkonfirmasi tekanan jual"
+ 6. Jika volume tinggi + trend bullish → WAJIB tulis: "volume tinggi mengkonfirmasi kekuatan tren naik"
+ 7. VALIDASI SENTIMEN:
+    - DILARANG: Menyebut "didukung sentimen" jika sentimen NETRAL
+    - DILARANG: Menyebut faktor yang tidak ada di data
+    - WAJIB: Jika netral → tulis "tanpa dukungan sentimen kuat"
+ 8. WAJIB sebutkan posisi harga terhadap S/R dalam alasan:
+    - Dekat support → potensi rebound
+    - Dekat resistance → potensi rejection
+    - Di tengah range → WAJIB disebut "area range" atau "area konsolidasi"
+ 9. Jika HOLD: WAJIB jelaskan ALASAN SPESIFIK mengapa tidak entry:
+    - WAJIB menyebut MINIMAL 2 faktor utama (trend + momentum + volume)
+    - Jika volume rendah → "volume rendah → konfirmasi belum memadai"
+    - Jika tidak ada konfirmasi → "belum ada konfirmasi breakout"
+    - Jika RR tidak menarik → "risk/reward tidak memadai"
+    - Jika harga di tengah range → "harga di area konsolidasi → no trade zone"
+    - WAJIB gunakan format: "HOLD karena [faktor1] dan [faktor2]. Kondisi: {posisi_harga}. Strategi: tunggu konfirmasi breakout atau breakdown"
 10. WAJIB ADA TRADING SCENARIO dengan ANGKA dan BUFFER (anti false breakout):
     - Buffer 1-2% dari level S/R untuk validasi
     - Format wajib:
@@ -1052,18 +1108,32 @@ PEDOMAN:
       • SELL jika breakdown di bawah {breakdown_with_buffer} (-1-2% buffer dari {support_fmt}) dengan volume meningkat
       • Selain itu: tetap HOLD"
     - DILARANG membuat skenario tanpa level harga konkret
-11. Jangan pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
-12. Hindari bahasa lemah seperti "tunggu area jelas" → gunakan "menunggu konfirmasi breakout atau breakdown"
-13. DILARANG menentukan level jauh dari S/R
+11. Jika sinyal adalah BUY (EARLY) atau SELL (EARLY): WAJIB tulis bahwa ini early entry dan butuh konfirmasi breakout/breakdown
+12. JANGAN pernah bilang "perlu evaluasi lebih lanjut" atau "risiko tinggi" saja
+13. Hindari bahasa lemah seperti "tunggu area jelas" → gunakan "menunggu konfirmasi breakout atau breakdown"
+14. DILARANG menentukan level jauh dari S/R
 
-CONTOH OUTPUT BUY:
-"Trend bullish menjadi faktor dominan dengan volume tinggi. Meskipun ada risiko koreksi minor, sinyal utama tetap BUY."
+TIPE SIGNAL WAJIB DIKENALI:
+- BUY (CONFIRMED): Harga sudah breakout di atas resistance dengan volume tinggi → langsung BUY
+- BUY (EARLY): Harga belum breakout tapi momentum bullish → tunggu breakout untuk konfirmasi
+- SELL (CONFIRMED): Harga sudah breakdown di bawah support dengan volume tinggi → langsung SELL
+- SELL (EARLY): Harga belum breakdown tapi momentum bearish → tunggu breakdown untuk konfirmasi
+- HOLD: Belum ada konfirmasi atau ada konflik indikator
 
-CONTOH OUTPUT SELL:
-"Trend bearish menjadi faktor dominan dengan tekanan jual. Meskipun ada potensi bounce, sinyal utama tetap SELL."
+CONTOH OUTPUT BUY (CONFIRMED):
+"Breakout di atas {resistance_fmt} dengan volume tinggi mengkonfirmasi uptrend. Meskipun ada risiko koreksi minor, sinyal utama tetap BUY dengan konfirmasi breakout."
 
-CONTOH OUTPUT HOLD KOMPREHENSIF:
-"HOLD karena trend bearish dan volume rendah. Kondisi: harga di area konsolidasi ({support_fmt} - {resistance_fmt}). Skenario: BUY jika breakout di atas {breakout_with_buffer} dengan volume meningkat, SELL jika breakdown di bawah {breakdown_with_buffer} dengan volume meningkat, selain itu tetap HOLD."
+CONTOH OUTPUT BUY (EARLY):
+"Belum ada breakout di atas {breakout_fmt}, tapi struktur trend bullish. Tunggu konfirmasi breakout dengan volume sebelum entry."
+
+CONTOH OUTPUT SELL (CONFIRMED):
+"Breakdown di bawah {support_fmt} dengan volume tinggi mengkonfirmasi downtrend. Meskipun ada potensi bounce, sinyal utama tetap SELL dengan konfirmasi breakdown."
+
+CONTOH OUTPUT SELL (EARLY):
+"Belum ada breakdown di bawah {breakdown_fmt}, tapi tekanan bearish terlihat. Tunggu konfirmasi breakdown dengan volume sebelum entry."
+
+CONTOH OUTPUT HOLD:
+"HOLD karena {conflict_text}. Kondisi: {posisi_harga}. Skenario: BUY jika breakout di atas {breakout_with_buffer} dengan volume meningkat, SELL jika breakdown di bawah {breakdown_with_buffer} dengan volume meningkat, selain itu tetap HOLD."
 
 Jawab maksimal 2 kalimat (tapi skenario wajib dicantumkan dalam format yang jelas)."""
     
@@ -1073,22 +1143,27 @@ Jawab maksimal 2 kalimat (tapi skenario wajib dicantumkan dalam format yang jela
             max_tokens=200,
             messages=[{"role": "user", "content": prompt}]
         )
-        return response.choices[0].message.content.strip()
+        result = response.choices[0].message.content
+        return result.strip() if result else ""
     except Exception as e:
-        # Fallback reason based on signal
+        # Fallback reason based on signal type
+        confirmation_text = ""
+        if is_breakout:
+            confirmation_text = f"Breakout di atas {resistance_fmt} dengan volume tinggi terkonfirmasi."
+        elif is_breakdown:
+            confirmation_text = f"Breakdown di bawah {support_fmt} dengan volume tinggi terkonfirmasi."
+        elif is_early_entry:
+            confirmation_text = f"Early entry - belum ada breakout di atas {breakout_fmt}."
+        
         if is_buy:
-            base = f"Trend bullish menjadi faktor dominan."
-            if volume_confirm:
-                base = f"Trend bullish menjadi faktor dominan. {volume_confirm}."
-            return f"{base} Meskipun ada risiko koreksi minor, sinyal utama tetap BUY."
+            base = f"Trend bullish menjadi faktor dominan. {confirmation_text}"
+            return f"{base} Tunggu breakout di atas {breakout_fmt} untuk konfirmasi BUY."
         elif is_sell:
-            base = f"Trend bearish menjadi faktor dominan."
-            if volume_confirm:
-                base = f"Trend bearish menjadi faktor dominan. {volume_confirm}."
-            return f"{base} Meskipun ada potensi bounce, sinyal utama tetap SELL."
+            base = f"Trend bearish menjadi faktor dominan. {confirmation_text}"
+            return f"{base} Tunggu breakdown di bawah {breakdown_fmt} untuk konfirmasi SELL."
         else:
             # HOLD dengan format baru dan buffer
-            return f"HOLD karena harga di area konsolidasi ({support_fmt} - {resistance_fmt}). Skenario: BUY jika breakout di atas {breakout_with_buffer} dengan volume meningkat, SELL jika breakdown di bawah {breakdown_with_buffer} dengan volume meningkat, selain itu tetap HOLD."
+            return f"HOLD karena harga di area konsolidasi ({support_fmt} - {resistance_fmt}). Skenario: BUY jika breakout di atas {breakout_with_buffer} dengan volume meningkat, SELL jika breakdown di bawah {breakdown_with_buffer} dengan volume meningkat."
 
 # ==============================
 # FORMAT OUTPUT
@@ -1107,7 +1182,8 @@ def fmt_price(price, currency="USD"):
 def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
                            sinyal, total_skor, confidence, entry, sl, tp,
                            risk_level, rr_ratio, modal, position_size, alasan,
-                           market_condition, skor_detail, weights, jenis, no_trade):
+                           market_condition, skor_detail, weights, jenis, no_trade,
+                           is_early_entry=False):
     """Format output sesuai template 10-point system"""
     
     # Currency tergantung jenis aset
@@ -1167,8 +1243,14 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
                 sinyal_display = "HOLD (Bearish Bias)"
             else:
                 sinyal_display = "HOLD"
+        early_entry_warning = ""
     else:
         sinyal_display = sinyal
+        # Early entry warning
+        if "EARLY" in sinyal:
+            early_entry_warning = "\n⚠️ EARLY ENTRY: Belum ada breakout/breakdown terkonfirmasi. Tunggu konfirmasi sebelum entry!"
+        else:
+            early_entry_warning = ""
 
     # PRIORITAS UTAMA: Jika HOLD, wajib "-" semua
     if sinyal == "HOLD":
@@ -1210,7 +1292,7 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
 
 🎯 Sinyal: {sinyal_display}
 📊 Skor: {'+' if total_skor > 0 else ''}{total_skor}
-🔥 Confidence: {confidence:.0f}%{no_trade_warning}{weights_note}
+🔥 Confidence: {confidence:.0f}%{no_trade_warning}{early_entry_warning}{weights_note}
 
 📌 Rekomendasi:
 • Entry: {entry_display}
@@ -1292,29 +1374,50 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     if ("OVERSOLD" in rsi_status and "BEARISH" in macd_status) or ("OVERBOUGHT" in rsi_status and "BULLISH" in macd_status):
         has_conflict = True
     
+    # === BREAKOUT/BREAKDOWN DETECTION ===
+    # Wajib untuk konfirmasi sinyal BUY/SELL
+    breakout_status = detect_breakout_breakdown(indikator, market_condition)
+    is_breakout = breakout_status == "breakout"
+    is_breakdown = breakout_status == "breakdown"
+    
     # 6. SIGNAL LOGIC - KONFIRMASI WAJIB
     # Jika konflik indikator: HOLD SAMPAI BREAKOUT/BREAKDOWN TERKONFIRMASI
     
     if has_conflict:
-        # Konflik indikator → HOLD sampai konfirmasi
+        # Konflik indikator → HOLD sampai konfirmasi breakout/breakdown
         sinyal = "HOLD"
+        is_early_entry = False
     elif vol_rendah:
         # Volume rendah → HOLD
         sinyal = "HOLD"
-    elif total_skor >= 4:
-        # Strong signal + semua searah + volume OK → BUY
-        sinyal = "BUY"
+        is_early_entry = False
+    elif is_breakout and total_skor >= 1:
+        # Breakout terkonfirmasi + skor positif → BUY (STRONG CONFIRMATION)
+        sinyal = "BUY (CONFIRMED)"
+        is_early_entry = False
+    elif is_breakdown and total_skor <= -1:
+        # Breakdown terkonfirmasi + skor negatif → SELL (STRONG CONFIRMATION)
+        sinyal = "SELL (CONFIRMED)"
+        is_early_entry = False
+    elif total_skor >= 4 and vol_tinggi:
+        # Strong signal + volume tinggi tapi belum breakout → EARLY BUY
+        sinyal = "BUY (EARLY)"
+        is_early_entry = True
     elif total_skor >= 1:
-        # Lemah signal + volume OK → BUY (WEAK)
-        sinyal = "BUY (WEAK)"
-    elif total_skor <= -4:
-        # Strong signal + semua searah + volume OK → SELL
-        sinyal = "SELL"
+        # Lemah signal + volume OK tapi belum breakout → EARLY BUY
+        sinyal = "BUY (EARLY)"
+        is_early_entry = True
+    elif total_skor <= -4 and vol_tinggi:
+        # Strong signal + volume tinggi tapi belum breakdown → EARLY SELL
+        sinyal = "SELL (EARLY)"
+        is_early_entry = True
     elif total_skor <= -1:
-        # Lemah signal + volume OK → SELL (WEAK)
-        sinyal = "SELL (WEAK)"
+        # Lemah signal + volume OK tapi belum breakdown → EARLY SELL
+        sinyal = "SELL (EARLY)"
+        is_early_entry = True
     else:
         sinyal = "HOLD"
+        is_early_entry = False
     
     # has_conflict sudah tersedia dari sinyal logic (line ~1253)
     
@@ -1346,8 +1449,20 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     # Cek apakah semua indikator searah (strong signal)
     is_strong_signal = abs_skor >= 4 and not has_conflict and not vol_rendah
     
-    if is_strong_signal:
-        confidence = 60 + min((abs_skor - 4) * 3, 20)  # 60-80%
+    # Deteksi apakah ini early entry atau confirmed
+    is_early_entry = "EARLY" in sinyal
+    is_confirmed = "CONFIRMED" in sinyal
+    
+    # Confidence base on signal type
+    if is_confirmed:
+        # Confirmed signal (breakout/breakdown + volume) → higher confidence
+        confidence = 70 + min((abs_skor - 4) * 2, 15)  # 70-85%
+    elif is_early_entry:
+        # Early entry (belum breakout) → lower confidence
+        if is_strong_signal:
+            confidence = 50 + min((abs_skor - 4) * 2, 15)  # 50-65%
+        else:
+            confidence = 40 + min(abs_skor * 2, 15)  # 40-55%
     elif abs_skor >= 4:
         confidence = 50 + min((abs_skor - 4) * 2, 10)  # 50-60% (kuat tapi ada konflik)
     elif abs_skor >= 1:
@@ -1367,7 +1482,7 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         confidence = max(45, confidence)
     
     # Volume rendah + sinyal lemah → confidence rendah
-    if vol_rendah and ("WEAK" in sinyal or sinyal == "HOLD"):
+    if vol_rendah and ("EARLY" in sinyal or sinyal == "HOLD"):
         confidence = max(35, confidence - 10)
     
     # Konflik + bukan strong signal → max 50%
@@ -1378,11 +1493,15 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     if not has_news:
         confidence = max(35, confidence - 5)
     
+    # Early entry → extra penalty (belum ada breakout confirmation)
+    if is_early_entry:
+        confidence = max(35, confidence - 10)
+    
     # DILARANG confidence > 80% atau < 35%
     if confidence < 35:
         confidence = 35
-    if confidence > 80:
-        confidence = 80
+    if confidence > 85:
+        confidence = 85
     
     # 8. No-Trade Zone Check
     no_trade = detect_no_trade_zone(indikator, skor_detail)
@@ -1501,7 +1620,8 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         skor_detail=skor_detail,
         weights=weights,
         jenis=jenis,
-        no_trade=no_trade
+        no_trade=no_trade,
+        is_early_entry=is_early_entry
     )
     
     analysis_data = {
@@ -1515,7 +1635,9 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         "skor_detail": skor_detail,
         "position_size": position_size,
         "market_condition": market_condition,
-        "no_trade": no_trade
+        "no_trade": no_trade,
+        "is_early_entry": is_early_entry,
+        "breakout_status": breakout_status
     }
     
     return output, analysis_data
