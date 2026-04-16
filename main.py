@@ -2132,11 +2132,78 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         tp = 0
         position_size = 0
     
-    # Calculate professional risk metrics
+# Calculate professional risk metrics
     risk_metrics = calculate_risk_metrics(harga, entry, sl, tp, indikator, sinyal, modal, curr)
     
     # Calculate data quality
     data_quality = calculate_data_quality(indikator, berita)
+    
+    # ============================================================
+    # VALIDASI OTOMATIS SEBELUM OUTPUT
+    # ============================================================
+    
+    # 1. VALIDASI BIAS - Pastikan Bias konsisten dengan Trend + ADX
+    adx = indikator.get("adx", 0)
+    trend_status = indikator.get("trend_status", "NEUTRAL")
+    current_price = indikator.get("current_price", 0)
+    ma50 = indikator.get("ma50", 0)
+    ma200 = indikator.get("ma200", 0)
+    
+    # Tentukan trend direction yang dominan
+    trend_is_bearish = (trend_status == "BEARISH") or (current_price < ma50 and ma50 < ma200 and ma200 > 0)
+    trend_is_bullish = (trend_status == "BULLISH") or (current_price > ma50 and ma50 > ma200 and ma200 > 0)
+    trend_is_strong = adx > 25
+    
+    # Override sinyal jika trend kuat bertentangan dengan skor
+    if trend_is_strong:
+        if trend_is_bearish and is_buy and not is_breakout:
+            # Trend bearish kuat + ADX tinggi + BUY lemah = HOLD
+            sinyal = "HOLD"
+            is_early_entry = False
+            print(f"Validasi: Trend bearish kuat (ADX={adx}) override sinyal BUY")
+        elif trend_is_bullish and is_sell and not is_breakdown:
+            # Trend bullish kuat + ADX tinggi + SELL lemah = HOLD
+            sinyal = "HOLD"
+            is_early_entry = False
+            print(f"Validasi: Trend bullish kuat (ADX={adx}) override sinyal SELL")
+    
+    # 2. VALIDASI SKOR - Pastikan penjumlahan benar
+    expected_total = (
+        skor_detail.get("rsi", 0) + 
+        skor_detail.get("macd", 0) + 
+        skor_detail.get("trend", 0) + 
+        skor_detail.get("volume", 0) + 
+        skor_detail.get("sentimen", 0)
+    )
+    if abs(expected_total - total_skor) > 0.1:
+        print(f"Warning: Skor tidak konsisten. Expected: {expected_total}, Actual: {total_skor}")
+        total_skor = round(expected_total, 1)
+    
+    # 3. VALIDASI DATA QUALITY - Cek anomali
+    ma20 = indikator.get("ma20", 0)
+    if ma20 and ma50 and ma50 != 0:
+        ma_diff_pct = abs(ma20 - ma50) / ma50 * 100
+        if ma_diff_pct < 0.5:
+            # MA20 ≈ MA50 → flat trend / data tidak normal
+            data_quality["quality_grade"] = f"WARNING ({data_quality.get('quality_grade', 'C')})"
+            data_quality["warnings"] = data_quality.get("warnings", []) + ["MA20 ≈ MA50 (flat trend)"]
+            # Turunkan confidence jika ada anomali
+            confidence = max(35, confidence - 15)
+    
+    # 4. VALIDASI RISK/REWARD - Jika HOLD, tidak boleh ada R:R aneh
+    if sinyal == "HOLD" or entry == 0:
+        risk_metrics["rr_ratio"] = "N/A (No Position)"
+        risk_metrics["is_valid_rr"] = False
+    
+    # 5. VALIDASI SINYAL - Skor lemah harus HOLD
+    if -1 < total_skor < 1 and sinyal != "HOLD":
+        sinyal = "HOLD"
+        is_early_entry = False
+        print(f"Validasi: Skor lemah ({total_skor}) → HOLD")
+    
+    # 6. Re-capture signals after validation
+    is_buy = "BUY" in sinyal
+    is_sell = "SELL" in sinyal
     
     # AI Reasoning (LLM call — hanya untuk penjelasan)
     alasan = get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition)
