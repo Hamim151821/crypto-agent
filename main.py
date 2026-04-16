@@ -1942,7 +1942,7 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         has_conflict = True
     
     # === BREAKOUT/BREAKDOWN DETECTION ===
-    # Wajib untuk konfirmasi sinyal BUY/SELL
+# Wajib untuk konfirmasi sinyal BUY/SELL
     breakout_status = detect_breakout_breakdown(indikator, market_condition)
     is_breakout = breakout_status == "breakout"
     is_breakdown = breakout_status == "breakdown"
@@ -1966,27 +1966,10 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         # Breakdown terkonfirmasi + skor negatif → SELL (STRONG CONFIRMATION)
         sinyal = "SELL (CONFIRMED)"
         is_early_entry = False
-    elif total_skor >= 4 and vol_tinggi:
-        # Strong signal + volume tinggi tapi belum breakout → EARLY BUY
-        sinyal = "BUY (EARLY)"
-        is_early_entry = True
-    elif total_skor >= 1:
-        # Lemah signal + volume OK tapi belum breakout → EARLY BUY
-        sinyal = "BUY (EARLY)"
-        is_early_entry = True
-    elif total_skor <= -4 and vol_tinggi:
-        # Strong signal + volume tinggi tapi belum breakdown → EARLY SELL
-        sinyal = "SELL (EARLY)"
-        is_early_entry = True
-    elif total_skor <= -1:
-        # Lemah signal + volume OK tapi belum breakdown → EARLY SELL
-        sinyal = "SELL (EARLY)"
-        is_early_entry = True
     else:
+        # TIDAK ADA KONFIRMASI → HOLD (Tidak ada EARLY)
         sinyal = "HOLD"
         is_early_entry = False
-    
-    # has_conflict sudah tersedia dari sinyal logic (line ~1253)
     
     # === SENTIMENT CONSISTENCY ===
     sentimen_status = sentimen.get("status", "NETRAL")
