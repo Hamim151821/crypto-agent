@@ -1909,24 +1909,24 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     else:
         dominant_signal = "Tidak ada konflik utama antar indikator."
 
-    prompt = f"""Kamu adalah Senior Market Analyst dari Institusi Hedge Fund. Berikan analisis tajam, spesifik, dan tanpa template generik. Maksimal 4 kalimat dalam Bahasa Indonesia.
+    prompt = f"""Kamu adalah Senior Quant Analyst dari Hedge Fund. Berikan analisis tajam, sintesis indikator yang saling bertentangan, dan patuhi aturan market regime. Maksimal 4 kalimat Bahasa Indonesia.
 
 DATA MARKET SAAT INI:
 - Harga: {current_price} ({ma_position})
-- Trend & Sinyal: {trend_direction} | {sinyal}
-- Fase/Setup Market: {market_setup}
-- Momentum: RSI {rsi:.1f} | Stoch {stoch_k:.1f} | MACD {macd_status}
-- Volume & OBV: {vol_status} | {vol_obv_context}
+- Market Regime & Strategi: {strategy_regime}
+- Trend Utama: {trend_direction} | ADX: {indikator.get('adx', 0):.2f}
+- Resolusi Konflik (Dominan): {dominant_signal}
+- Sinyal Sistem: {sinyal} | Status Entry: {sinyal}
+- Momentum & Volume: RSI {rsi:.1f} | Stoch {stoch_k:.1f} | {vol_obv_context}
 - Level Kunci: Support {support:.2f} | Resistance {resistance:.2f}
 
-ATURAN WAJIB (STRICT RULES - HARUS DIPATUHI JIKA TIDAK INGIN GAGAL):
-1. DILARANG KERAS menggunakan kalimat generik seperti "menunggu breakout atau breakdown" atau "belum ada konfirmasi kuat".
-2. PRIORITASKAN FASE MARKET: Jika ada peringatan "POTENSI REJECTION/EXHAUSTION" atau "PULLBACK DALAM DOWNTREND" atau "EARLY REBOUND", WAJIB jadikan ini fokus kalimat pertama Anda.
-3. DETEKSI ANOMALI: Jika peringatan "WASPADA FAKEOUT" muncul, jelaskan secara eksplisit bahwa kenaikan harga ini manipulatif / lemah karena tidak didukung volume atau aliran dana (OBV).
-4. SKENARIO DUA ARAH (ACTION PLAN): Berikan taktik spesifik. Contoh jika overbought dekat pucuk: "Hindari entry karena risiko rejection tinggi di resistance {resistance:.2f}, skenario amannya adalah buy on weakness di support {support:.2f}."
-5. SINKRONISASI BIAS: Jika sinyal "HOLD (Bullish Bias)" muncul saat Trend Bearish, tegaskan bahwa ini hanya "potensi technical rebound jangka pendek", BUKAN pembalikan tren total.
+ATURAN MUTLAK (GAGAL MEMATUHI = FATAL ERROR):
+1. WAJIB GUNAKAN REGIME: Jika {strategy_regime} adalah RANGE TRADING, jangan pernah bahas "tren kuat" atau "breakout". Fokus murni pantulan Support-Resistance.
+2. ATURAN 'NO TRADE': Jika Status Entry adalah "NO TRADE", KALIMAT TERAKHIR WAJIB BERBUNYI: "Sistem menginstruksikan NO TRADE. Tetap wait and see dan dilarang melakukan spekulasi entry." DILARANG KERAS memberikan skenario "buy on weakness" atau skenario alternatif apa pun!
+3. SINTESIS KONFLIK: Jangan sebutkan semua indikator. Gunakan variabel {dominant_signal} sebagai pedoman utama untuk menyimpulkan narasi.
+4. OVERBOUGHT/OVERSOLD CONTEXT: Dalam uptrend kuat, jangan anggap overbought sebagai sinyal jual langsung. Sebut itu sebagai "indikasi kekuatan tren (strength)".
 
-Jawab dengan bahasa teknikal yang lugas, evaluasi risiko downside, langsung ke inti analisis, dan tanpa basa-basi/sapaan."""
+Susun narasi yang dingin, tanpa basa-basi, langsung ke prioritas risiko dan market reality."""
     
     try:
         response = client.chat.completions.create(
