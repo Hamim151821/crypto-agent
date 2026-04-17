@@ -1143,28 +1143,103 @@ JAWAB HANYA dalam format JSON (tanpa markdown, tanpa penjelasan tambahan):
 # ==============================
 # 5. SCORING ENGINE
 # ==============================
-def calculate_score(indikator, sentimen, weights, market_condition):
+def calculate_score(indikator, sentimen, weights, market_condition, trend_direction):
     """
-    Hitung skor deterministik dari semua indikator.
-    
-    RSI: +2 / 0 / -2
+    Hitung skor deterministik dari semua indikator dengan logika contextual.
+
+    RSI: Contextual berdasarkan trend_direction
+    Stochastic: Contextual berdasarkan trend_direction
     MACD: +2 / -2
     Trend: +3 / 0 / -3
     Volume: +1 / -1
     Sentimen: +2 / 0 / -2
-    
+
     Total skor = jumlah semua × bobot adaptif
     """
     scores = {}
-    
-    # RSI Score
+
+    # === CONTEXTUAL RSI & STOCHASTIC SCORING ===
+    rsi = indikator.get("rsi", 50)
     rsi_status = indikator.get("rsi_status", "NORMAL")
-    if rsi_status == "OVERSOLD":
-        scores["rsi"] = 2
-    elif rsi_status == "OVERBOUGHT":
-        scores["rsi"] = -2
+    stoch_k = indikator.get("stoch_k", 50)
+    stoch_status = indikator.get("stoch_status", "NORMAL")
+
+    # Determine if strong trend
+    is_strong_bullish = trend_direction == "BULLISH (dominan)"
+    is_strong_bearish = trend_direction == "BEARISH (dominan)"
+    is_sideways = market_condition == "SIDEWAYS"
+
+    # RSI Contextual Scoring
+    if is_strong_bullish:
+        # Dalam trend bullish kuat: Overbought adalah STRENGTH
+        if rsi > 70 or rsi_status == "OVERBOUGHT":
+            scores["rsi"] = 1  # Strength, not overbought
+        elif rsi < 40 or rsi_status == "OVERSOLD":
+            scores["rsi"] = -1  # Weakness in uptrend
+        else:
+            scores["rsi"] = 0
+    elif is_strong_bearish:
+        # Dalam trend bearish kuat: RSI 40-50 adalah RESISTANCE
+        if rsi >= 40 and rsi <= 50:
+            scores["rsi"] = -1  # Resistance level
+        elif rsi < 30 or rsi_status == "OVERSOLD":
+            scores["rsi"] = 0  # Normal weakness
+        elif rsi > 70 or rsi_status == "OVERBOUGHT":
+            scores["rsi"] = 1  # Unexpected strength
+        else:
+            scores["rsi"] = 0
+    elif is_sideways:
+        # Sideways: Standard oscillator rules
+        if rsi_status == "OVERSOLD":
+            scores["rsi"] = 2
+        elif rsi_status == "OVERBOUGHT":
+            scores["rsi"] = -2
+        else:
+            scores["rsi"] = 0
     else:
-        scores["rsi"] = 0
+        # Default: Standard rules
+        if rsi_status == "OVERSOLD":
+            scores["rsi"] = 2
+        elif rsi_status == "OVERBOUGHT":
+            scores["rsi"] = -2
+        else:
+            scores["rsi"] = 0
+
+    # Stochastic Contextual Scoring
+    if is_strong_bullish:
+        # Dalam trend bullish kuat: Overbought adalah STRENGTH
+        if stoch_k > 80 or stoch_status == "OVERBOUGHT":
+            scores["stoch"] = 1  # Strength
+        elif stoch_k < 30 or stoch_status == "OVERSOLD":
+            scores["stoch"] = -1  # Weakness
+        else:
+            scores["stoch"] = 0
+    elif is_strong_bearish:
+        # Dalam trend bearish kuat: Stoch 40-50 adalah RESISTANCE
+        if stoch_k >= 40 and stoch_k <= 50:
+            scores["stoch"] = -1  # Resistance
+        elif stoch_k < 25 or stoch_status == "OVERSOLD":
+            scores["stoch"] = 0  # Normal weakness
+        elif stoch_k > 75 or stoch_status == "OVERBOUGHT":
+            scores["stoch"] = 1  # Unexpected strength
+        else:
+            scores["stoch"] = 0
+    elif is_sideways:
+        # Sideways: Standard oscillator rules
+        if stoch_status == "OVERSOLD":
+            scores["stoch"] = 2
+        elif stoch_status == "OVERBOUGHT":
+            scores["stoch"] = -2
+        else:
+            scores["stoch"] = 0
+    else:
+        # Default: Standard rules
+        if stoch_status == "OVERSOLD":
+            scores["stoch"] = 2
+        elif stoch_status == "OVERBOUGHT":
+            scores["stoch"] = -2
+        else:
+            scores["stoch"] = 0
     
     # MACD Score
     macd_status = indikator.get("macd_status", "BEARISH")
@@ -1805,6 +1880,35 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     else:
         vol_obv_context = "Pergerakan didukung aliran dana yang wajar"
 
+    # Strategy Regime based on ADX and market condition
+    adx = indikator.get("adx", 0)
+    is_sideways = market_condition == "SIDEWAYS"
+    is_bullish_trend = "BULLISH" in trend_direction.upper()
+    is_bearish_trend = "BEARISH" in trend_direction.upper()
+
+    if adx < 20 or is_sideways:
+        strategy_regime = "RANGE TRADING (Fokus: Beli dekat Support, Jual dekat Resistance. Abaikan narasi trend panjang)."
+    elif adx >= 25 and is_bullish_trend:
+        strategy_regime = "TREND FOLLOWING (Fokus: Buy on dip/pullback, overbought adalah tanda kekuatan)."
+    elif adx >= 25 and is_bearish_trend:
+        strategy_regime = "DEFENSIVE / SHORT (Fokus: Pantau rejection di resistance, hindari tangkap pisau jatuh)."
+    else:
+        strategy_regime = "NEUTRAL (Tunggu konfirmasi trend atau range)."
+
+    # Dominant Signal for conflict resolution
+    macd_bullish = "BULLISH" in macd_status
+    obv_bearish = "BEARISH" in obv_divergence
+    price_below_ma50 = current_price < ma50
+    trend_bullish_strong = trend_direction == "BULLISH (dominan)"
+    is_overbought = (rsi > 70 or stoch_k > 80)
+
+    if macd_bullish and obv_bearish and price_below_ma50:
+        dominant_signal = "Trend Utama & Distribusi OBV LEBIH DOMINAN daripada momentum MACD sementara."
+    elif trend_bullish_strong and is_overbought:
+        dominant_signal = "Struktur Trend Jauh LEBIH DOMINAN daripada status Overbought."
+    else:
+        dominant_signal = "Tidak ada konflik utama antar indikator."
+
     prompt = f"""Kamu adalah Senior Market Analyst dari Institusi Hedge Fund. Berikan analisis tajam, spesifik, dan tanpa template generik. Maksimal 4 kalimat dalam Bahasa Indonesia.
 
 DATA MARKET SAAT INI:
@@ -2117,13 +2221,27 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     
     # 3. Market condition (sudah dihitung di indikator)
     market_condition = indikator.get("market_condition", "UNKNOWN")
-    
+
+    # Determine trend_direction for contextual scoring
+    current_price = indikator.get("current_price", 0)
+    ma50 = indikator.get("ma50", 0)
+    ma200 = indikator.get("ma200", 0)
+    trend_direction = "NETRAL"
+    if current_price > ma50 and ma50 > ma200:
+        trend_direction = "BULLISH (dominan)"
+    elif current_price < ma50 and ma50 < ma200:
+        trend_direction = "BEARISH (dominan)"
+    elif ma50 > ma200:
+        trend_direction = "BULLISH (terbalik)"
+    elif ma50 < ma200:
+        trend_direction = "BEARISH (terbalik)"
+
     # 4. Analisis Berita
     sentimen = analyze_news(berita, symbol)
-    
+
     # === VOLUME RATIO (SEBELUM SCORE) ===
     volume_ratio = indikator.get("volume_ratio", 1.0)
-    
+
     # === VOLUME CONFIRMATION FOR SENTIMENT (SEBELUM SCORE) ===
     # Jika sentimen positif/negatif tapi Volume Ratio < 0.8x → downgrade ke NETRAL
     sentimen_skor = sentimen.get("skor", 0)
@@ -2132,9 +2250,9 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
             sentimen["status"] = "NETRAL"
             sentimen["skor"] = 0
             sentimen["dampak"] = "News diabaikan pasar (Volume rendah)"
-    
+
     # 5. Calculate Scores (deterministik)
-    skor_detail, total_skor = calculate_score(indikator, sentimen, weights, market_condition)
+    skor_detail, total_skor = calculate_score(indikator, sentimen, weights, market_condition, trend_direction)
     
     # === TENTUKAN TREND & VOLUME SEBELUM SINYAL ===
     is_trending_down = market_condition.startswith("TRENDING DOWN")
@@ -2362,20 +2480,31 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
             sl = entry * 1.02  # 2% di atas entry
             tp = entry * 0.94  # 6% di bawah entry (RR 1:3)
     
-    # Risk Level based on conditions
-    is_volatile = "VOLATILE" in market_condition
-    is_strong_trend = market_condition.startswith("TRENDING UP") or market_condition.startswith("TRENDING DOWN")
+    # Risk Level - Dynamic Assessment
+    current_price = indikator.get("current_price", 0)
+    resistance = indikator.get("resistance", 0)
+    support = indikator.get("support", 0)
     vol_status = indikator.get("volume_status", "NORMAL")
-    is_volume_rendah = vol_status == "RENDAH"
-    
-    if "HOLD" in sinyal.upper():
-        risk_level = "LOW"
-    elif is_strong_trend and not is_volatile:
-        risk_level = "MEDIUM"
-    elif is_volume_rendah:
-        risk_level = "MEDIUM-HIGH"
+    obv_divergence = indikator.get("obv_divergence", "")
+    is_bearish_trend = market_condition.startswith("TRENDING DOWN")
+    is_bullish_trend = market_condition.startswith("TRENDING UP")
+    is_buy_signal = "BUY" in sinyal.upper()
+    is_sell_signal = "SELL" in sinyal.upper()
+
+    # HIGH RISK: Near resistance with weak volume and bearish OBV
+    near_resistance = resistance > 0 and abs(current_price - resistance) / resistance <= 0.02
+    weak_volume = vol_status == "RENDAH"
+    bearish_obv = "BEARISH" in obv_divergence
+    if near_resistance and weak_volume and bearish_obv:
+        risk_level = "HIGH"  # Bahaya Pucuk
+    # HIGH RISK: Counter-trend signals
+    elif (is_buy_signal and is_bearish_trend) or (is_sell_signal and is_bullish_trend):
+        risk_level = "HIGH"  # Counter-Trend
+    # LOW RISK: Near support with bullish trend
+    elif support > 0 and abs(current_price - support) / support <= 0.02 and is_bullish_trend:
+        risk_level = "LOW"  # Optimal Entry
     else:
-        risk_level = "HIGH"
+        risk_level = "MEDIUM"  # Default
     
     # Position Sizing
     # Tentukan currency berdasarkan jenis aset
