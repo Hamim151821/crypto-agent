@@ -1805,68 +1805,24 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     else:
         vol_obv_context = "Pergerakan didukung aliran dana yang wajar"
 
-    prompt = f"""Kamu adalah AI Trading Analyst profesional. Berikan ALASAN SINGKAT (maksimal 2 kalimat) dalam Bahasa Indonesia.
+    prompt = f"""Kamu adalah Senior Market Analyst dari Institusi Hedge Fund. Berikan analisis tajam, spesifik, dan tanpa template generik. Maksimal 4 kalimat dalam Bahasa Indonesia.
 
-DATA ANALISIS:
-- Harga saat ini: {current_price} ({price_position})
-- Trend: {trend_direction}
-- {trend_desc}
-- MA20: {ma20:.2f} | MA50: {ma50:.2f} | MA200: {ma200:.2f}
-- RSI: {rsi} | Stochastic: {stoch_k}
-- Volume: {vol_status} | MACD: {macd_status}
-- Sinyal: {sinyal} | Skor Total: {total_skor}
-- Skor Trend: {trend_skor} ({trend_narasi})
-- Support: {support:.2f} | Resistance: {resistance:.2f}
+DATA MARKET SAAT INI:
+- Harga: {current_price} ({ma_position})
+- Trend & Sinyal: {trend_direction} | {sinyal}
+- Fase/Setup Market: {market_setup}
+- Momentum: RSI {rsi:.1f} | Stoch {stoch_k:.1f} | MACD {macd_status}
+- Volume & OBV: {vol_status} | {vol_obv_context}
+- Level Kunci: Support {support:.2f} | Resistance {resistance:.2f}
 
-ATURAN WAJIB - KONSISTENSI LOGIKA:
+ATURAN WAJIB (STRICT RULES - HARUS DIPATUHI JIKA TIDAK INGIN GAGAL):
+1. DILARANG KERAS menggunakan kalimat generik seperti "menunggu breakout atau breakdown" atau "belum ada konfirmasi kuat".
+2. PRIORITASKAN FASE MARKET: Jika ada peringatan "POTENSI REJECTION/EXHAUSTION" atau "PULLBACK DALAM DOWNTREND" atau "EARLY REBOUND", WAJIB jadikan ini fokus kalimat pertama Anda.
+3. DETEKSI ANOMALI: Jika peringatan "WASPADA FAKEOUT" muncul, jelaskan secara eksplisit bahwa kenaikan harga ini manipulatif / lemah karena tidak didukung volume atau aliran dana (OBV).
+4. SKENARIO DUA ARAH (ACTION PLAN): Berikan taktik spesifik. Contoh jika overbought dekat pucuk: "Hindari entry karena risiko rejection tinggi di resistance {resistance:.2f}, skenario amannya adalah buy on weakness di support {support:.2f}."
+5. SINKRONISASI BIAS: Jika sinyal "HOLD (Bullish Bias)" muncul saat Trend Bearish, tegaskan bahwa ini hanya "potensi technical rebound jangka pendek", BUKAN pembalikan tren total.
 
-1. ADX < 25:
-   - TIDAK boleh menggunakan istilah "trend kuat"
-   - Gunakan: "trend lemah / fase konsolidasi / potensi transisi"
-
-2. KHUSUS: Jika ADX < 25 DAN harga di bawah MA50 & MA200 DAN MACD Bullish:
-   - WAJIB label: "EARLY REVERSAL / POTENSI PERUBAHAN TREND"
-   - DILARANG menyebut: "dominasi bearish"
-
-3. SKOR TREND = +3:
-   - Narasi WAJIB mengarah ke bullish / potensi naik
-   - TIDAK boleh bilang dominasi bearish
-
-4. SKOR TREND = -3:
-   - Narasi WAJIB mengarah ke bearish / potensi turun
-   - TIDAK boleh bilang peluang bullish tanpa konteks
-
-5. SINKRONKAN SIGNAL DENGAN ANALISIS:
-   - Jika sinyal HOLD → analisis harus menjelaskan mengapa TIDAK ADA posisi aktif
-   - Jika sinyal BUY → WAJIB menyebut kondisi bullish
-   - Jika sinyal SELL → WAJIB menyebut kondisi bearish
-   - DILARANG kontradiksi
-
-4. JIKA HOLD:
-   - WAJIB sebutkan ALASAN SPESIFIK (MINIMAL 2 faktor):
-     * "volume rendah → konfirmasi belum memadai"
-     * "belum ada breakout ke atas resistance {resistance:.2f}"
-     * "trend bearish kuat, tunggu pullback ke MA50"
-     * "harga di area konsolidasi, tunggu konfirmasi"
-   - Fokus ke area konfirmasi: "tunggu harga tembus resistance / menembus support"
-   - TIDAK BOLEH: "menunggu konfirmasi" saja tanpa menyebutkan level konkret
-
-5. SCENARIO WAJIB PRESISI:
-   - BUY jika: breakout di atas {resistance:.2f} + volume tinggi + trend bullish
-   - SELL jika: breakdown di bawah {support:.2f} + volume tinggi + trend bearish
-   - HOLD jika: tidak ada konfirmasi breakout/breakdown dengan volume
-
-6. ANALISIS JELAS DAN LENGKAP:
-   - Siapa dominant? Buyer atau Seller?
-   - Mengapa sekarang TIDAK optimal untuk entry?
-   - Kapan saat yang tepat untuk entry?
-
-7. TIDAK BOLEH:
-   - "menunggu arah" tanpa konteks
-   - "market belum jelas"
-   - Kontradiksi antara sinyal dan analisis
-
-Jawab maksimal 2 kalimat dengan skenario konkret dan jelas."""
+Jawab dengan bahasa teknikal yang lugas, evaluasi risiko downside, langsung ke inti analisis, dan tanpa basa-basi/sapaan."""
     
     try:
         response = client.chat.completions.create(
