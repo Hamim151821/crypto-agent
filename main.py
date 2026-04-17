@@ -1758,7 +1758,53 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
         trend_narasi = "Skor trend -3 → potensi bearish / peluang turun"
     else:
         trend_narasi = ""
-    
+
+    # Pattern Recognition Variables
+    ma_position = ""
+    current_price = indikator.get("current_price", 0)
+    ma20 = indikator.get("ma20", 0)
+    ma50 = indikator.get("ma50", 0)
+    ma200 = indikator.get("ma200", 0)
+    if current_price > ma20 and current_price > ma50 and current_price > ma200:
+        ma_position = "Di atas semua MA (Uptrend solid)"
+    elif current_price < ma20 and current_price < ma50 and current_price < ma200:
+        ma_position = "Di bawah semua MA (Downtrend solid)"
+    elif current_price > ma20 and current_price > ma50 and current_price < ma200:
+        ma_position = "Di atas MA pendek namun tertahan MA200 (Fase Transisi/Koreksi)"
+    elif current_price < ma50 and current_price > ma200:
+        ma_position = "Di bawah MA pendek tapi tertahan di atas MA200 (Pullback)"
+    else:
+        ma_position = "Bergerak di tengah garis MA (Choppy)"
+
+    market_setup = ""
+    stoch_k = indikator.get("stoch_k", 50)
+    rsi = indikator.get("rsi", 50)
+    support = indikator.get("support", 0)
+    resistance = indikator.get("resistance", 0)
+    macd_status = indikator.get("macd_status", "")
+    distance_to_resistance = abs(current_price - resistance) / current_price * 100 if resistance > 0 else 100
+    distance_to_support = abs(current_price - support) / current_price * 100 if support > 0 else 100
+
+    if (stoch_k > 80 or rsi > 70) and distance_to_resistance <= 2:
+        market_setup = "POTENSI REJECTION / EXHAUSTION (Harga kepanasan di pucuk)"
+    elif (stoch_k < 20 or rsi < 30) and distance_to_support <= 2 and "BULLISH" in macd_status:
+        market_setup = "EARLY REBOUND SETUP (Potensi pantulan dari support)"
+    elif trend_direction == "BEARISH" and "BULLISH" in macd_status and current_price >= ma20:
+        market_setup = "PULLBACK DALAM DOWNTREND (Kenaikan sementara)"
+    else:
+        market_setup = "FASE KONSOLIDASI / TRENDING NORMAL"
+
+    vol_obv_context = ""
+    vol_status = indikator.get("volume_status", "")
+    obv_divergence = indikator.get("obv_divergence", "")
+    price_moving_up = current_price > ma20  # Approximate price direction
+    near_resistance = distance_to_resistance <= 2
+
+    if (price_moving_up or near_resistance) and (vol_status == "RENDAH" or "BEARISH" in obv_divergence):
+        vol_obv_context = "WASPADA FAKEOUT: Kenaikan tidak didukung akumulasi dana (Volume Lemah / OBV Distribusi)"
+    else:
+        vol_obv_context = "Pergerakan didukung aliran dana yang wajar"
+
     prompt = f"""Kamu adalah AI Trading Analyst profesional. Berikan ALASAN SINGKAT (maksimal 2 kalimat) dalam Bahasa Indonesia.
 
 DATA ANALISIS:
