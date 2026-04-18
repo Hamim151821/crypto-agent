@@ -1623,9 +1623,14 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     - Jika BUY/SELL, nada pasti
     - Include breakout status untuk konfirmasi
     """
-    # Fallback Initialization
+    # Fallback Initialization Mutlak
+    execution_status = "NO TRADE"
+    edge_clarity = "NO EDGE (Menunggu konfirmasi data)"
+    rr_display = "N/A"
+    next_trade_plan = "Menunggu setup valid."
+
+    # Existing Fallback
     alasan = "Menunggu konfirmasi pergerakan harga lebih lanjut."
-    next_trade_plan = next_trade_plan if 'next_trade_plan' in locals() else "Standby. Evaluasi ulang setelah ada konfirmasi dari indikator volume dan tren."
     current_price = indikator.get("current_price", 0)
     plan_entry = current_price if current_price > 0 else 0
     plan_sl = plan_entry * 0.98
@@ -1930,6 +1935,9 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
         execution_setup = f"RANGE TRADE BUY. Entry di Support {support:.2f}. SL di {sl_price:.2f}. TP di {resistance:.2f}."
     else:
         execution_setup = "HOLD. Tunggu konfirmasi tren."
+
+    # Recalculate Total Score
+    skor_total = int(sum(skor_detail.values()))
 
     # Safe assignment untuk rr_display
     safe_rr = locals().get('risk_reward_ratio', 0)
