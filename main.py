@@ -1615,19 +1615,28 @@ def calculate_data_quality(indikator, berita):
 # AI REASONING (LLM untuk narasi final)
 # ==============================
 def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, confidence, rr_ratio, risk_level, execution_status, edge_clarity, next_trade_plan):
-    rsi = indikator.get("rsi", 50)
-    stoch = indikator.get("stochastic", "")
-    adx = indikator.get("adx", 0)
+    # 1. Anti-Crash Data Type Casting
+    try:
+        rsi = float(indikator.get("rsi", 50))
+        adx = float(indikator.get("adx", 0))
+        stoch_str = str(indikator.get("stochastic", ""))
+    except Exception:
+        rsi, adx, stoch_str = 50, 0, ""
 
-    # Kategori ADX Institusional
+    # 2. Kategori ADX Institusional
     adx_desc = "Sangat Kuat" if adx >= 25 else ("Moderate/Mulai Terbentuk" if adx >= 20 else "Lemah/Choppy")
 
-    # Jembatan Logika (Overbought/Oversold & Mean Reversion)
+    # 3. Jembatan Logika (Overbought/Oversold & Counter-Trend Pullback)
     jembatan_logika = ""
-    if "UP" in market_condition and ("OVERBOUGHT" in str(stoch) or rsi >= 70):
-        jembatan_logika = "Meskipun arah tren Bullish, kondisi saat ini OVERBOUGHT (Harga kemahalan/rawan koreksi). Secara probabilitas, sangat berisiko untuk memaksakan entry sekarang. Taktik optimal adalah menunggu koreksi (BUY ON DIP)."
-    elif "DOWN" in market_condition and ("OVERSOLD" in str(stoch) or rsi <= 30):
-        jembatan_logika = "Meskipun arah tren Bearish, kondisi saat ini OVERSOLD (Harga jenuh jual/di lembah). Secara probabilitas, sangat berisiko untuk melakukan short sekarang. Taktik optimal adalah menunggu pantulan naik (SELL ON RALLY)."
+    if "UP" in market_condition and ("OVERBOUGHT" in stoch_str or rsi >= 70):
+        jembatan_logika = "Meskipun arah tren Bullish, kondisi OVERBOUGHT (Harga kemahalan) membuat entry berisiko. Taktik optimal: tunggu koreksi (BUY ON DIP)."
+    elif "DOWN" in market_condition and ("OVERSOLD" in stoch_str or rsi <= 30):
+        jembatan_logika = "Meskipun arah tren Bearish, kondisi OVERSOLD (Harga jenuh jual) membuat short berisiko. Taktik optimal: tunggu pantulan naik (SELL ON RALLY)."
+    elif "DOWN" in market_condition and total_skor > -3 and "WAIT" in sinyal:
+        # Deteksi fase pullback (Misal MACD Bullish tapi Trend Bearish)
+        jembatan_logika = "Tren makro Bearish, namun momentum jangka pendek sedang menguat. Ini adalah fase PULLBACK (Counter-trend rally), momentum ideal untuk mencari pijakan SELL ON RALLY di area resistance."
+    elif "UP" in market_condition and total_skor < 3 and "WAIT" in sinyal:
+        jembatan_logika = "Tren makro Bullish, namun momentum jangka pendek sedang melemah. Ini adalah fase KOREKSI (Pullback), momentum ideal untuk mencari pijakan BUY ON DIP di area support."
 
     prompt = f"""Sebagai AI Quant Trader tingkat lanjut, buat laporan eksekusi (MAKSIMAL 4 KALIMAT) untuk {symbol}.
 
@@ -1643,23 +1652,24 @@ Jembatan Logika: {jembatan_logika}
 ATURAN MUTLAK PENULISAN:
 1. AKURASI TREN: WAJIB gunakan deskripsi kekuatan tren sesuai data ("{adx_desc}"). DILARANG menyebutnya "kuat" jika ADX di bawah 25!
 2. JELASKAN CONFIDENCE: Jika Confidence < 50%, jelaskan secara eksplisit bahwa angka ini rendah KARENA "jarak harga saat ini masih terlalu jauh dari area eksekusi ideal."
-3. FUNGSI JEMBATAN LOGIKA: Jika 'Jembatan Logika' memiliki isi teks, WAJIB gunakan kalimat tersebut di awal narasi untuk menjelaskan alasan strategi menunggu kita.
+3. FUNGSI JEMBATAN LOGIKA: Jika 'Jembatan Logika' tersedia, WAJIB gunakan kalimat tersebut untuk menjelaskan alasan di balik Action Plan.
 4. DEFINISI ROADMAP: Jika Status Sistem adalah ROADMAP, tegaskan di awal kalimat bahwa "Aset ini dimasukkan ke dalam Watchlist Jangka Panjang."
 5. WAJIB mengutip format Action Plan secara akurat (Strategi, Area Pantau, Trigger, TP, SL, R:R).
-6. Nada Bahasa: Profesional, menjelaskan "Sebab-Akibat", dan tidak melompat pada kesimpulan buta.
 """
 
     try:
         response = client.chat.completions.create(
-            model="meta-llama-llama-3.3-70b-instruct",
+            model="meta-llama/llama-3.3-70b-instruct",
             max_tokens=400,
             messages=[{"role": "user", "content": prompt}]
         )
         result = response.choices[0].message.content
-        return result.strip() if result else "Standby."
+        # Fallback Cerdas: Jika LLM kosong, kembalikan RAW DATA Action Plan
+        return result.strip() if result else f"[Sistem Otomatis]\n{next_trade_plan}"
     except Exception as e:
         print(f"⚠️ LLM Error: {e}")
-        return "Standby."
+        # Fallback Cerdas: Jangan ucapkan Standby, langsung print output Engine!
+        return f"⚠️ LLM Sedang Sibuk. Menampilkan Raw Data Kalkulasi Mesin:\nStatus: {edge_clarity}\n{next_trade_plan}"
     
     try:
         response = client.chat.completions.create(
