@@ -1723,13 +1723,18 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
     # yang dimasukkan ke dalam f-string laporan teknikal!
 
     # 2. Sync Sinyal & Risk Level (Dijalankan SETELAH kalkulasi Confidence dari Engine AI selesai)
-    if confidence > 60:
+    if confidence >= 60:
         sinyal = "READY (Waiting Trigger)"
         risk_level = "MEDIUM (Actionable Setup)"
     elif confidence >= 40:
-        sinyal = "WATCHLIST (Monitoring)"
+        sinyal = "WATCHLIST (Active Monitoring)"
+        risk_level = "LOW-MEDIUM (Setup Developing)"
+    elif confidence >= 30:
+        sinyal = "LOW PRIO WATCHLIST (No Man's Land)"
+        risk_level = "LOW (Passive Monitoring)"
     else:
-        sinyal = "NO TRADE (Standby)"
+        sinyal = "IGNORE (No Valid Setup)"
+        risk_level = "LOW (Avoid)"
     # ------------------------------------
 
     # Default values
