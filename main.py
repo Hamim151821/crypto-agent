@@ -1638,7 +1638,7 @@ def calculate_data_quality(indikator, berita):
 # ==============================
 # AI REASONING (LLM untuk alasan saja)
 # ==============================
-def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, confidence, rr_ratio):
+def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, confidence, rr_ratio, risk_level):
     """
     Alasan WAJIB:
     - Sesuai data yang ditampilkan
@@ -2698,7 +2698,7 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     
     # AI Reasoning (LLM call — hanya untuk penjelasan)
     # Include additional context for better reasoning
-    alasan = get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, confidence, rr_ratio)
+    alasan = get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, confidence, rr_ratio, risk_level)
     
     # Final contradiction check - perbaiki alasan jika berkontradiksi
     # Jika alasan menyebut bullish tapi trend bearish kuat → perbaiki
