@@ -2483,6 +2483,10 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     ma50 = indikator.get("ma50", 0)
     vwap = indikator.get("vwap", 0)
     obv_flow = indikator.get("obv_divergence", "NONE")
+    # Patch OBV Otomatis untuk mencegah "NONE"
+    obv_val = float(indikator.get("obv", 0))
+    if obv_flow == "NONE" or obv_flow == "":
+        obv_flow = "BULLISH (Accumulation)" if obv_val > 0 else "BEARISH (Distribution)"
 
     is_bearish_macro = "TRENDING DOWN" in market_condition or (ma50 > 0 and current_price < ma50)
     is_bullish_macro = "TRENDING UP" in market_condition or (ma50 > 0 and current_price > ma50)
