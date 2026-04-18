@@ -1614,38 +1614,43 @@ def calculate_data_quality(indikator, berita):
 # ==============================
 # AI REASONING (LLM untuk narasi final)
 # ==============================
-def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, entry_confidence, rr_ratio, risk_level, execution_status, edge_clarity, next_trade_plan, market_confidence, adx_value):
-    adx_status = "Kuat" if adx_value >= 25 else ("Emerging/Mulai Terbentuk" if adx_value >= 20 else "Lemah/Sideways")
+def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, confidence, rr_ratio, risk_level, execution_status, edge_clarity, next_trade_plan):
+    rsi = indikator.get("rsi", 50)
+    rsi_context = ""
+    if "DOWN" in market_condition and rsi >= 70:
+        rsi_context = "RSI Overbought di tren turun = Konfirmasi momentum SELL ON RALLY sangat kuat."
+    elif "UP" in market_condition and rsi <= 30:
+        rsi_context = "RSI Oversold di tren naik = Konfirmasi momentum BUY ON DIP sangat kuat."
 
-    prompt = f"""Sebagai AI Quant Trader, buat laporan eksekusi (maks 5 kalimat) untuk {symbol}.
+    prompt = f"""Sebagai AI Quant Trader, buat laporan eksekusi untuk {symbol}.
 
 [DATA KUANTITATIF]
 Arah Makro: {market_condition}
-Status Tren Saat Ini: {adx_status} (ADX: {adx_value})
-Status Eksekusi: {execution_status} | Edge: {edge_clarity}
-Market Confidence: {market_confidence}% | Entry Confidence: {entry_confidence}%
+Status: {execution_status} | Edge: {edge_clarity}
+System Confidence: {confidence}%
+Konteks Spesifik: {rsi_context}
 
-[ACTION PLAN LENGKAP]
+[ACTION PLAN]
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN:
-1. Analisis WAJIB mengintegrasikan kondisi volume dan probabilitas jarak harga sebagai dasar argumen eksekusi.
-2. JIKA status WATCHLIST, Anda WAJIB mengutip Action Plan secara persis mencakup: "Area Pantau", "Trigger", "Target", "SL", "R:R", dan "BATAL JIKA". DILARANG MERINGKAS ATAU MENGHILANGKAN SALAH SATU!
-3. Jelaskan logikanya: "Meskipun tren makro {adx_status}, namun karena jarak harga ke area pantau adalah [sebutkan jarak %], maka probabilitas setup ini [sebutkan tinggi/rendah]."
-4. Bahasa harus sangat mekanis, objektif, dan terstruktur.
+1. JIKA Edge adalah "NO SETUP" atau "NO EDGE", tulislah MAKSIMAL 2 KALIMAT saja. DILARANG KERAS menyarankan harga target (TP) atau Stop Loss (SL) agar trader tidak terpancing overtrading! Cukup sebutkan untuk mengabaikan aset.
+2. JIKA Edge adalah "WATCHLIST", Anda wajib mengutip ACTION PLAN secara penuh (TP, SL, R:R).
+3. Integrasikan "Konteks Spesifik" (jika ada) ke dalam argumen tren Anda.
+4. Bahasa harus sangat dingin, disiplin, dan mekanis.
 """
 
     try:
         response = client.chat.completions.create(
             model="meta-llama/llama-3.3-70b-instruct",
-            max_tokens=350,
+            max_tokens=300,
             messages=[{"role": "user", "content": prompt}]
         )
         result = response.choices[0].message.content
-        return result.strip() if result else "Sistem dalam mode standby. Menunggu konfirmasi data."
+        return result.strip() if result else "Sistem dalam mode standby."
     except Exception as e:
         print(f"⚠️ LLM Error: {e}")
-        return "Sistem dalam mode standby. Menunggu konfirmasi data."
+        return "Sistem dalam mode standby."
     
     try:
         response = client.chat.completions.create(
@@ -2515,9 +2520,8 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     # Include additional context for better reasoning
     alasan = get_ai_reasoning(
         symbol, indikator, sentimen, skor_detail, total_skor,
-        sinyal, market_condition, entry_confidence, rr_display,
-        risk_level, execution_status, edge_clarity, next_trade_plan,
-        market_confidence, adx
+        sinyal, market_condition, confidence, rr_display,
+        risk_level, execution_status, edge_clarity, next_trade_plan
     )
 
     # Format Output
