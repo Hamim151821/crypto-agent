@@ -1614,27 +1614,123 @@ def calculate_data_quality(indikator, berita):
 # ==============================
 # AI REASONING (LLM untuk alasan saja)
 # ==============================
-def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, confidence, rr_ratio, risk_level, execution_status, edge_clarity, next_trade_plan):
+def get_ai_reasoning(indikator, current_price, support, resistance):
     """
-    Alasan WAJIB:
-    - Sesuai data yang ditampilkan
-    - Jika konflik, sebutkan konflik sebenarnya
-    - Jika HOLD, kasih trigger actionable
-    - Jika BUY/SELL, nada pasti
-    - Include breakout status untuk konfirmasi
+    Full Reconstruction of AI Reasoning Function
     """
-    # Fallback Initialization Mutlak
+    # 1. ABSOLUTE FALLBACK
     execution_status = "NO TRADE"
-    edge_clarity = "NO EDGE (Menunggu konfirmasi data)"
+    edge_clarity = "NO EDGE (Menunggu konfirmasi)"
     rr_display = "N/A"
-    next_trade_plan = "Menunggu setup valid."
+    next_trade_plan = "Menunggu konfirmasi setup yang valid."
+    alasan = "Menunggu perhitungan sistem."
+    confidence = 0
+    skor_total = 0
 
-    # Existing Fallback
-    alasan = "Menunggu konfirmasi pergerakan harga lebih lanjut."
-    current_price = indikator.get("current_price", 0)
-    plan_entry = current_price if current_price > 0 else 0
+    # 2. LOGIKA INDIKATOR & SKOR
+    ma20 = indikator.get("ma20", 0)
+    ma50 = indikator.get("ma50", 0)
+    ma200 = indikator.get("ma200", 0)
+    rsi = indikator.get("rsi", 50)
+    rsi_status = indikator.get("rsi_status", "NORMAL")
+    macd_status = indikator.get("macd_status", "BEARISH")
+    volume_status = indikator.get("volume_status", "NORMAL")
+    trend_status = indikator.get("trend_status", "NEUTRAL")
+    adx = indikator.get("adx", 0)
+    market_condition = indikator.get("market_condition", "UNKNOWN")
+
+    # Trend Direction
+    if current_price > ma20 and current_price > ma50:
+        trend_direction = "BULLISH (Short-Medium)"
+    elif current_price < ma20 and current_price < ma50:
+        trend_direction = "BEARISH (Short-Medium)"
+    else:
+        trend_direction = "SIDEWAYS / TRANSISI"
+
+    # RSI Scoring (Overhaul)
+    if trend_direction == "BULLISH" and rsi > 70:
+        skor_rsi = 1  # Overbought = Strength in uptrend
+    elif market_condition == "SIDEWAYS" and rsi > 70:
+        skor_rsi = -2  # Overbought = Reversal Risk in range
+    elif rsi_status == "OVERSOLD":
+        skor_rsi = 2
+    elif rsi_status == "OVERBOUGHT":
+        skor_rsi = -2
+    else:
+        skor_rsi = 0
+
+    # MACD Scoring
+    skor_macd = 2 if macd_status == "BULLISH" else -2
+
+    # Trend Scoring
+    if current_price > 0 and ma20 > 0 and ma50 > 0 and ma200 > 0:
+        if current_price < ma20 and current_price < ma50 and current_price < ma200:
+            skor_trend = -3
+        elif current_price > ma20 and current_price > ma50 and current_price > ma200:
+            skor_trend = 3
+        elif adx < 20:
+            skor_trend = 0
+        else:
+            skor_trend = 3 if trend_status == "BULLISH" else -3 if trend_status == "BEARISH" else 0
+    else:
+        skor_trend = 3 if trend_status == "BULLISH" else -3 if trend_status == "BEARISH" else 0
+
+    # Volume Scoring
+    skor_volume = 1 if volume_status == "TINGGI" else -1 if volume_status == "RENDAH" else 0
+
+    # Sentimen Scoring (placeholder)
+    skor_sentimen = 0  # Assume neutral
+
+    # 3. REKALKULASI SKOR
+    skor_total = int(skor_rsi + skor_macd + skor_trend + skor_volume + skor_sentimen)
+
+    # 4. LOGIKA EKSEKUSI, R:R & NEXT TRADE PLAN
+    # Kalkulasi R:R
+    if market_condition == "SIDEWAYS" or "BUY" in sinyal.upper():
+        plan_entry = support if support > 0 else current_price * 0.97
+    elif "BULLISH" in trend_direction:
+        plan_entry = ma20 if ma20 > 0 else current_price * 0.98
+    else:
+        plan_entry = current_price * 0.95
+
     plan_sl = plan_entry * 0.98
-    plan_tp = plan_entry * 1.05
+    plan_tp = resistance if resistance > 0 else plan_entry * 1.05
+
+    if plan_entry > 0 and plan_sl > 0 and plan_tp > 0:
+        risk = abs(plan_entry - plan_sl)
+        reward = abs(plan_tp - plan_entry)
+        if risk > 0:
+            rr_value = reward / risk
+            rr_display = f"1 : {rr_value:.1f}" if rr_value >= 1.5 else "N/A (Tidak ada setup valid)"
+        else:
+            rr_display = "N/A (Tidak ada setup valid)"
+    else:
+        rr_display = "N/A (Tidak ada setup valid)"
+
+    # Edge Clarity & Execution Status
+    if rr_display == "N/A (Tidak ada setup valid)":
+        execution_status = "NO TRADE"
+        if skor_total >= 3:
+            edge_clarity = "WEAK EDGE (Arah market jelas, tapi zona Entry berisiko tinggi / R:R buruk)."
+            confidence = 45
+        else:
+            edge_clarity = "NO EDGE (Market tidak jelas dan tidak ada momentum valid)."
+            confidence = 35
+    else:
+        execution_status = "READY TO EXECUTE"
+        confidence = 75
+
+    # Next Trade Plan
+    if execution_status == "NO TRADE":
+        next_trade_plan = f"Pantau area {plan_entry:.2f}. Setup valid HANYA JIKA harga melakukan pullback ke area ini disertai rejection candle dan lonjakan volume."
+    elif "BULLISH" in trend_direction and current_price >= resistance * 0.98:
+        next_trade_plan = f"Tunggu harga koreksi (pullback) ke area {plan_entry:.2f}. Jika ada pantulan, BUY dengan SL di {plan_sl:.2f} dan TP di {plan_tp:.2f}."
+    elif "BEARISH" in trend_direction:
+        next_trade_plan = f"Trend turun dominan. Tunggu harga naik ke resistance {resistance:.2f} untuk mencari peluang REJECT/SELL, atau tunggu pola reversal solid."
+    elif "SIDEWAYS" in market_condition:
+        next_trade_plan = f"Tunggu harga menyentuh support {plan_entry:.2f}. BUY jika tidak tembus, SL ketat di {plan_sl:.2f}, TP di {plan_tp:.2f}."
+    else:
+        next_trade_plan = "Tunggu konfirmasi tren yang jelas sebelum eksekusi."
     # Extract trend structure and MA50 from indikator
     ma50 = indikator.get("ma50", 0)
     current_price = indikator.get("current_price", 0)
@@ -1934,32 +2030,33 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     elif "SIDEWAYS" in market_condition:
         execution_setup = f"RANGE TRADE BUY. Entry di Support {support:.2f}. SL di {sl_price:.2f}. TP di {resistance:.2f}."
     else:
-        execution_setup = "HOLD. Tunggu konfirmasi tren."
+        next_trade_plan = "Tunggu konfirmasi tren yang jelas sebelum eksekusi."
 
-    # Recalculate Total Score
-    skor_total = int(sum(skor_detail.values()))
-
-    # Safe assignment untuk rr_display
-    safe_rr = locals().get('risk_reward_ratio', 0)
-
-    if execution_status == "NO TRADE" or safe_rr < 0.1:
-        rr_display = "N/A (Tidak ada setup valid)"
-    else:
-        rr_display = f"1 : {safe_rr:.1f}"
-
+    # 5. LLM PROMPT
     prompt = f"""Sebagai Algoritma Eksekusi Institusional, hasilkan laporan operasional maksimal 4 kalimat.
 
 DATA:
-Trend: {trend_direction} | Skor: {total_skor}
+Trend: {trend_direction} | Skor: {skor_total}
 R:R: {rr_display} | Status: {execution_status}
 Edge: {edge_clarity}
 Conditional Plan: {next_trade_plan}
 
 ATURAN MUTLAK:
-1. DILARANG menggunakan kata "untuk memastikan", "potensi", "mungkin", atau bahasa asumsi lainnya.
-2. Gunakan bahasa operasional berbasis *trigger* (Contoh: "Setup valid jika harga menyentuh X disertai konfirmasi volume").
-3. JIKA status NO TRADE, jelaskan perbedaan antara arah market ({total_skor}) dengan kualitas entry zona saat ini, lalu berikan {next_trade_plan} TANPA menyebutkan angka Stop Loss atau Take Profit.
+1. DILARANG menggunakan kata "untuk memastikan", "potensi", "mungkin", atau asumsi.
+2. Gunakan bahasa operasional berbasis trigger (Contoh: "Setup valid jika harga menyentuh X").
+3. JIKA status NO TRADE, jelaskan perbedaan arah market ({skor_total}) dengan kualitas entry saat ini, lalu berikan {next_trade_plan} TANPA SL/TP.
 """
+
+    try:
+        response = client.chat.completions.create(
+            model="meta-llama/llama-3.3-70b-instruct",
+            max_tokens=200,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        result = response.choices[0].message.content
+        return result.strip() if result else ""
+    except Exception as e:
+        return alasan
     
     try:
         response = client.chat.completions.create(
