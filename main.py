@@ -1169,41 +1169,17 @@ def calculate_score(indikator, sentimen, weights, market_condition, trend_direct
     is_strong_bearish = trend_direction == "BEARISH (dominan)"
     is_sideways = market_condition == "SIDEWAYS"
 
-    # RSI Contextual Scoring
-    if is_strong_bullish:
-        # Dalam trend bullish kuat: Overbought adalah STRENGTH
-        if rsi > 70 or rsi_status == "OVERBOUGHT":
-            scores["rsi"] = 1  # Strength, not overbought
-        elif rsi < 40 or rsi_status == "OVERSOLD":
-            scores["rsi"] = -1  # Weakness in uptrend
-        else:
-            scores["rsi"] = 0
-    elif is_strong_bearish:
-        # Dalam trend bearish kuat: RSI 40-50 adalah RESISTANCE
-        if rsi >= 40 and rsi <= 50:
-            scores["rsi"] = -1  # Resistance level
-        elif rsi < 30 or rsi_status == "OVERSOLD":
-            scores["rsi"] = 0  # Normal weakness
-        elif rsi > 70 or rsi_status == "OVERBOUGHT":
-            scores["rsi"] = 1  # Unexpected strength
-        else:
-            scores["rsi"] = 0
-    elif is_sideways:
-        # Sideways: Standard oscillator rules
-        if rsi_status == "OVERSOLD":
-            scores["rsi"] = 2
-        elif rsi_status == "OVERBOUGHT":
-            scores["rsi"] = -2
-        else:
-            scores["rsi"] = 0
+    # RSI Contextual Scoring (Overhaul)
+    if trend_direction == "BULLISH" and rsi > 70:
+        scores["rsi"] = 1  # Overbought = Strength in uptrend
+    elif market_condition == "SIDEWAYS" and rsi > 70:
+        scores["rsi"] = -2  # Overbought = Reversal Risk in range
+    elif rsi_status == "OVERSOLD":
+        scores["rsi"] = 2
+    elif rsi_status == "OVERBOUGHT":
+        scores["rsi"] = -2
     else:
-        # Default: Standard rules
-        if rsi_status == "OVERSOLD":
-            scores["rsi"] = 2
-        elif rsi_status == "OVERBOUGHT":
-            scores["rsi"] = -2
-        else:
-            scores["rsi"] = 0
+        scores["rsi"] = 0
 
     # Stochastic Contextual Scoring
     if is_strong_bullish:
@@ -1955,21 +1931,19 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     else:
         execution_setup = "HOLD. Tunggu konfirmasi tren."
 
-    prompt = f"""Kamu adalah Algoritma Eksekusi Trading Institusional. Hasilkan laporan maksimal 4 kalimat, 100% berbasis data angka, tanpa bahasa abstrak atau keraguan.
+    prompt = f"""Sebagai Algoritma Eksekusi Institusional, hasilkan laporan operasional maksimal 4 kalimat.
 
-DATA MARKET:
-- Harga: {current_price} | Trend: {trend_direction} | ADX: {indikator.get('adx', 0):.2f}
-- Market Quality Score: {total_skor} | Entry Quality R:R: {risk_reward_ratio}
-- Status: {execution_status} | Edge: {edge_clarity}
-- Next Trade Plan: {next_trade_plan}
+DATA:
+Trend: {trend_direction} | Skor: {total_skor}
+R:R: {rr_display} | Status: {execution_status}
+Edge: {edge_clarity}
+Conditional Plan: {next_trade_plan}
 
-ATURAN PENULISAN MUTLAK:
-1. KALIMAT 1 (DIAGNOSIS): Jelaskan mengapa "Market Bagus belum tentu Entry Bagus". (Contoh: "Meskipun skor trend sangat kuat (+8), posisi harga saat ini tidak memberikan rasio R:R yang layak.").
-2. KALIMAT 2 (EDGE & EKSEKUSI SAAT INI): Nyatakan status eksekusi dari variabel {execution_status} dan {edge_clarity}. Jika NO TRADE, katakan batal eksekusi.
-3. KALIMAT 3 & 4 (NEXT TRADE PLAN - WAJIB): Jangan tinggalkan user menggantung. Tuliskan PERSIS isi variabel {next_trade_plan} yang berisi angka Entry, SL, dan TP simulasi sebagai rencana ke depan.
-4. BAHASA: Dilarang menggunakan kata "Mungkin", "Potensi", "Waspada", atau "Sentimen Berita" kecuali didukung lonjakan volume.
-
-Tulis dengan format lugas, tajam, dan orientasi pada rencana aksi selanjutnya."""
+ATURAN MUTLAK:
+1. DILARANG menggunakan kata "untuk memastikan", "potensi", "mungkin", atau bahasa asumsi lainnya.
+2. Gunakan bahasa operasional berbasis *trigger* (Contoh: "Setup valid jika harga menyentuh X disertai konfirmasi volume").
+3. JIKA status NO TRADE, jelaskan perbedaan antara arah market ({total_skor}) dengan kualitas entry zona saat ini, lalu berikan {next_trade_plan} TANPA menyebutkan angka Stop Loss atau Take Profit.
+"""
     
     try:
         response = client.chat.completions.create(
@@ -2738,8 +2712,10 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     plan_sl = plan_entry * 0.98
     plan_tp = resistance if resistance > 0 else plan_entry * 1.05
 
-    # Variabel next_trade_plan
-    if "BULLISH" in trend_direction and current_price >= resistance * 0.98:
+    # Variabel next_trade_plan (Trigger Only Mode)
+    if execution_status == "NO TRADE":
+        next_trade_plan = f"Pantau area {plan_entry:.2f}. Setup valid HANYA JIKA harga melakukan pullback ke area ini disertai rejection candle dan lonjakan volume."
+    elif "BULLISH" in trend_direction and current_price >= resistance * 0.98:
         next_trade_plan = f"Tunggu harga koreksi (pullback) ke area {plan_entry:.2f}. Jika ada pantulan, BUY dengan SL di {plan_sl:.2f} dan TP di {plan_tp:.2f}."
     elif "BEARISH" in trend_direction:
         next_trade_plan = f"Trend turun dominan. Tunggu harga naik ke resistance {resistance:.2f} untuk mencari peluang REJECT/SELL, atau tunggu pola reversal solid."
@@ -2768,8 +2744,13 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         execution_status = "NO TRADE"
         sinyal = "WAIT (No Valid Setup)"
         risk_level = "NONE (Di Luar Market)"
-        confidence = 0
-        edge_clarity = "TIDAK ADA EDGE: R:R tidak memenuhi syarat minimal institusi (1:1.5)."
+        if total_skor >= 3:
+            confidence = 45  # Weak Edge / Tren Kuat
+            edge_clarity = "WEAK EDGE (Arah market jelas, tapi zona Entry berisiko tinggi / R:R buruk)."
+        else:
+            confidence = 35  # No Edge / Choppy
+            edge_clarity = "NO EDGE (Market tidak jelas dan tidak ada momentum valid)."
+        rr_display = "N/A (Tidak ada setup valid)"
         execution_setup = "NO TRADE. Abaikan spekulasi."
     elif entry_quality == "BAGUS" and (("BUY" in sinyal.upper() and "BULLISH" in trend_direction) or ("SELL" in sinyal.upper() and "BEARISH" in trend_direction)):
         execution_status = "READY TO EXECUTE"
