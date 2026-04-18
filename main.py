@@ -1946,24 +1946,23 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     else:
         execution_setup = "HOLD. Tunggu konfirmasi tren."
 
-    prompt = f"""Kamu adalah Senior Quant Analyst dari Hedge Fund. Berikan analisis tajam, sintesis indikator yang saling bertentangan, dan patuhi aturan market regime. Maksimal 4 kalimat Bahasa Indonesia.
+    prompt = f"""Bertindaklah sebagai Lead Execution Trader. Berikan briefing eksekusi yang tegas, tajam, dan tanpa bahasa defensif/robotik (DILARANG menggunakan kata 'Regime', 'Sintesis', 'Waspada', 'Potensi', atau 'Kami mempertimbangkan'). Maksimal 4 kalimat.
 
-DATA MARKET SAAT INI:
-- Harga: {current_price} ({ma_position})
-- Market Regime & Strategi: {strategy_regime}
-- Trend Utama: {trend_direction} | ADX: {indikator.get('adx', 0):.2f}
-- Resolusi Konflik (Dominan): {dominant_signal}
-- Sinyal Sistem: {sinyal} | Status Entry: {sinyal}
-- Momentum & Volume: RSI {rsi:.1f} | Stoch {stoch_k:.1f} | {vol_obv_context}
-- Level Kunci: Support {support:.2f} | Resistance {resistance:.2f}
+DATA MARKET:
+- Harga: {current_price} | Tren Pendek: {trend_direction} | ADX: {indikator.get('adx', 0):.2f}
+- Momentum: RSI {rsi:.1f} | OBV {vol_obv_context}
+- Confidence: {confidence}% | Risk Level: {risk_level}
+- Edge Clarity: {edge_clarity}
+- Trade Setup: {execution_setup}
+- Risk/Reward: {risk_reward_ratio}
 
-ATURAN MUTLAK (GAGAL MEMATUHI = FATAL ERROR):
-1. WAJIB GUNAKAN REGIME: Jika {strategy_regime} adalah RANGE TRADING, jangan pernah bahas "tren kuat" atau "breakout". Fokus murni pantulan Support-Resistance.
-2. ATURAN 'NO TRADE': Jika Status Entry adalah "NO TRADE", KALIMAT TERAKHIR WAJIB BERBUNYI: "Sistem menginstruksikan NO TRADE. Tetap wait and see dan dilarang melakukan spekulasi entry." DILARANG KERAS memberikan skenario "buy on weakness" atau skenario alternatif apa pun!
-3. SINTESIS KONFLIK: Jangan sebutkan semua indikator. Gunakan variabel {dominant_signal} sebagai pedoman utama untuk menyimpulkan narasi.
-4. OVERBOUGHT/OVERSOLD CONTEXT: Dalam uptrend kuat, jangan anggap overbought sebagai sinyal jual langsung. Sebut itu sebagai "indikasi kekuatan tren (strength)".
+ATURAN EKSEKUSI MUTLAK:
+1. KEJELASAN EDGE: Kalimat pertama WAJIB langsung menyatakan apakah ada "Edge" atau tidak (gunakan data {edge_clarity}), beserta alasan utamanya (misal karena tren atau penolakan resistance).
+2. JIKA TIDAK ADA EDGE: Jika setup adalah "NO TRADE", hentikan analisis di sini. Berikan satu kalimat tegas: "Tidak ada setup valid, hindari entry." DILARANG memberikan opsi "Buy on weakness".
+3. JIKA ADA EDGE (BULLISH/SIDEWAYS): Jika setup menyarankan Entry, JABARKAN ANGKA EKSEKUSINYA. Sebutkan secara eksplisit level Entry, Stop Loss (SL), dan Take Profit (TP) dari variabel {execution_setup}.
+4. INTERPRETASI OVERBOUGHT: Di market Uptrend Kuat, RSI overbought adalah TANDA KEKUATAN (Strength), BUKAN sinyal jual.
 
-Susun narasi yang dingin, tanpa basa-basi, langsung ke prioritas risiko dan market reality."""
+Susun narasi layaknya eksekutor profesional. Langsung sebutkan angka dan risiko, tanpa peringatan defensif."""
     
     try:
         response = client.chat.completions.create(
