@@ -1969,23 +1969,21 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     else:
         next_trade_plan = "Tunggu konfirmasi tren yang jelas sebelum eksekusi."
 
-    prompt = f"""Bertindaklah sebagai Lead Execution Trader. Berikan briefing eksekusi yang tegas, tajam, dan tanpa bahasa defensif/robotik (DILARANG menggunakan kata 'Regime', 'Sintesis', 'Waspada', 'Potensi', atau 'Kami mempertimbangkan'). Maksimal 4 kalimat.
+    prompt = f"""Kamu adalah Algoritma Eksekusi Trading Institusional. Hasilkan laporan maksimal 4 kalimat, 100% berbasis data angka, tanpa bahasa abstrak atau keraguan.
 
 DATA MARKET:
-- Harga: {current_price} | Tren Pendek: {trend_direction} | ADX: {indikator.get('adx', 0):.2f}
-- Momentum: RSI {rsi:.1f} | OBV {vol_obv_context}
-- Confidence: {confidence}% | Risk Level: {risk_level}
-- Edge Clarity: {edge_clarity}
-- Trade Setup: {execution_setup}
-- Risk/Reward: {risk_reward_ratio}
+- Harga: {current_price} | Trend: {trend_direction} | ADX: {indikator.get('adx', 0):.2f}
+- Market Quality Score: {total_skor} | Entry Quality R:R: {risk_reward_ratio}
+- Status: {execution_status} | Edge: {edge_clarity}
+- Next Trade Plan: {next_trade_plan}
 
-ATURAN EKSEKUSI MUTLAK:
-1. KEJELASAN EDGE: Kalimat pertama WAJIB langsung menyatakan apakah ada "Edge" atau tidak (gunakan data {edge_clarity}), beserta alasan utamanya (misal karena tren atau penolakan resistance).
-2. JIKA TIDAK ADA EDGE: Jika setup adalah "NO TRADE", hentikan analisis di sini. Berikan satu kalimat tegas: "Tidak ada setup valid, hindari entry." DILARANG memberikan opsi "Buy on weakness".
-3. JIKA ADA EDGE (BULLISH/SIDEWAYS): Jika setup menyarankan Entry, JABARKAN ANGKA EKSEKUSINYA. Sebutkan secara eksplisit level Entry, Stop Loss (SL), dan Take Profit (TP) dari variabel {execution_setup}.
-4. INTERPRETASI OVERBOUGHT: Di market Uptrend Kuat, RSI overbought adalah TANDA KEKUATAN (Strength), BUKAN sinyal jual.
+ATURAN PENULISAN MUTLAK:
+1. KALIMAT 1 (DIAGNOSIS): Jelaskan mengapa "Market Bagus belum tentu Entry Bagus". (Contoh: "Meskipun skor trend sangat kuat (+8), posisi harga saat ini tidak memberikan rasio R:R yang layak.").
+2. KALIMAT 2 (EDGE & EKSEKUSI SAAT INI): Nyatakan status eksekusi dari variabel {execution_status} dan {edge_clarity}. Jika NO TRADE, katakan batal eksekusi.
+3. KALIMAT 3 & 4 (NEXT TRADE PLAN - WAJIB): Jangan tinggalkan user menggantung. Tuliskan PERSIS isi variabel {next_trade_plan} yang berisi angka Entry, SL, dan TP simulasi sebagai rencana ke depan.
+4. BAHASA: Dilarang menggunakan kata "Mungkin", "Potensi", "Waspada", atau "Sentimen Berita" kecuali didukung lonjakan volume.
 
-Susun narasi layaknya eksekutor profesional. Langsung sebutkan angka dan risiko, tanpa peringatan defensif."""
+Tulis dengan format lugas, tajam, dan orientasi pada rencana aksi selanjutnya."""
     
     try:
         response = client.chat.completions.create(
