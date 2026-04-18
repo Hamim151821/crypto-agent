@@ -1614,28 +1614,30 @@ def calculate_data_quality(indikator, berita):
 # ==============================
 # AI REASONING (LLM untuk narasi final)
 # ==============================
-def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, confidence, rr_ratio, risk_level, execution_status, edge_clarity, next_trade_plan):
-    prompt = f"""Sebagai Algoritma Eksekusi Kuantitatif, hasilkan laporan singkat (3-4 kalimat) untuk aset {symbol}.
+def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, entry_confidence, rr_ratio, risk_level, execution_status, edge_clarity, next_trade_plan, market_confidence, adx_value):
+    prompt = f"""Sebagai AI Quant Trader, buat laporan eksekusi (3-4 kalimat) untuk {symbol}.
 
-[DATA FAKTUAL]
-Arah Makro: {market_condition} (Skor Tren: {total_skor})
+[DATA KUANTITATIF]
+Arah Makro: {market_condition} (ADX: {adx_value})
+Skor Total Kombinasi: {total_skor}
 Status Eksekusi: {execution_status} | Edge: {edge_clarity}
-Kesiapan Entry Saat Ini (Confidence): {confidence}%
+Market Confidence (Kekuatan Tren): {market_confidence}%
+Entry Confidence (Kesiapan Masuk Sekarang): {entry_confidence}%
 
 [ACTION PLAN]
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN:
-1. WAJIB mengutip ACTION PLAN secara penuh (termasuk Angka Pantau, Trigger, TP, SL, dan R:R). Jangan biatkan kalimat terpotong!
-2. Jelaskan logika ini dengan tegas: "Skor {total_skor}" menunjukkan kekuatan tren makro, sedangkan "Confidence {confidence}%" menunjukkan bahwa harga saat ini belum berada di zona entry yang aman.
-3. Jika Edge adalah "NO EDGE" dan Action Plan menyuruh abaikan, tegaskan untuk menghindari aset ini.
-4. Gunakan bahasa mekanis dan profesional.
+1. WAJIB mengutip ACTION PLAN secara penuh (Angka Pantau, Trigger, TP, SL).
+2. DILARANG berasumsi bahwa "Skor {total_skor}" berarti tren lemah JIKA "ADX {adx_value}" menunjukkan nilai tinggi (Tren kuat). Patokan tren adalah ADX.
+3. Jelaskan pemisahan keyakinan: "Meskipun Market Confidence tinggi ({market_confidence}%), Entry Confidence adalah {entry_confidence}% karena..." (Sebutkan alasan dari Edge Clarity).
+4. Gunakan bahasa mekanis, analitis, dan profesional tanpa emosi.
 """
 
     try:
         response = client.chat.completions.create(
             model="meta-llama/llama-3.3-70b-instruct",
-            max_tokens=350,  # EXPANDED TOKEN LIMIT TO PREVENT CUT-OFF
+            max_tokens=350,
             messages=[{"role": "user", "content": prompt}]
         )
         result = response.choices[0].message.content
@@ -2436,7 +2438,7 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     else:
         execution_status = "HOLD"
 
-    # === THE "NEXT TRADE PLAN" ENGINE (BIAS-AWARE INSTITUTIONAL LOGIC) ===
+    # === THE "NEXT TRADE PLAN" ENGINE (ADVANCED INSTITUTIONAL LOGIC) ===
     adx = indikator.get("adx", 0)
     support = indikator.get("support", 0)
     resistance = indikator.get("resistance", 0)
@@ -2463,60 +2465,70 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
             plan_entry = dynamic_res if dynamic_res > 0 else resistance
             plan_sl = plan_entry * 1.03
             plan_tp = support
-            trigger = "Bearish Engulfing/Pin Bar reject MA20/VWAP + Volume > MA20 Vol"
+            trigger = "Bearish Rejection (Pin Bar/Engulfing) + Volume > Rata-rata"
         elif is_bullish_macro:
             setup_type = "BUY ON DIP (Trend Following)"
             dynamic_sup = ma20 if ma20 < current_price else vwap
             plan_entry = dynamic_sup if dynamic_sup > 0 else support
             plan_sl = plan_entry * 0.97
             plan_tp = resistance
-            trigger = "Bullish Engulfing/Pin Bar mantul MA20/VWAP + Volume > MA20 Vol"
+            trigger = "Bullish Rejection (Pin Bar/Engulfing) + Volume > Rata-rata"
     else:
-        # Sideways Regime - Strictly Bias-Aligned
         if is_bullish_macro:
             setup_type = "RANGE BUY (Bullish Bias)"
             plan_entry = support
             plan_sl = support * 0.97
             plan_tp = resistance
-            trigger = "Bullish Engulfing/Pin Bar di Support + Volume > MA20 Vol"
+            trigger = "Rejection valid di Support + Volume Hijau"
         elif is_bearish_macro:
             setup_type = "RANGE SELL (Bearish Bias)"
             plan_entry = resistance
             plan_sl = resistance * 1.03
             plan_tp = support
-            trigger = "Bearish Engulfing/Pin Bar di Resistance + Volume > MA20 Vol"
+            trigger = "Rejection valid di Resistance + Volume Merah"
         else:
             setup_type = "RANGE TRADING (Neutral)"
             plan_entry = support
             plan_sl = support * 0.97
             plan_tp = resistance
-            trigger = "Rejection valid di Support + Volume > MA20 Vol"
+            trigger = "Pantulan S/R + Volume konfirmasi"
 
-    # 2. R:R Calculation
+    # 2. R:R Calculation & Confidence Split
     potensi_rr = 0
     if plan_entry > 0 and plan_sl > 0 and plan_entry != plan_sl:
         risk = abs(plan_entry - plan_sl)
         reward = abs(plan_tp - plan_entry)
         potensi_rr = reward / risk if risk > 0 else 0
 
+    market_confidence = min(100, int(adx * 2.5)) if adx > 10 else 20
+    entry_confidence = confidence if execution_status != "NO TRADE" else 0
+
     # 3. Finalization: Edge Clarity & Filter
     if execution_status == "NO TRADE":
-        confidence = 0
         if "BUY" in setup_type and "Distribution" in obv_flow:
             edge_clarity = "NO EDGE (Distribusi Institusi Kuat)"
-            next_trade_plan = "Abaikan setup Buy. Terdeteksi tekanan jual institusi (OBV Bearish)."
+            next_trade_plan = "Abaikan setup Buy. Terdeteksi tekanan jual (OBV Bearish)."
         elif potensi_rr >= 1.5:
             edge_clarity = "WATCHLIST (Menunggu Setup Valid)"
-            next_trade_plan = f"STRATEGI: {setup_type}. Pantau: {plan_entry:.2f}. TRIGGER: {trigger}. TARGET: {plan_tp:.2f} | SL: {plan_sl:.2f} (Est R:R 1:{potensi_rr:.1f})."
+            next_trade_plan = f"STRATEGI: {setup_type}. Area Pantau: {plan_entry:.2f}. TRIGGER: {trigger}. TARGET: {plan_tp:.2f} | SL: {plan_sl:.2f} (Est R:R 1:{potensi_rr:.1f})."
         else:
-            edge_clarity = "NO EDGE (R:R < 1:1.5)"
-            next_trade_plan = f"Abaikan aset. Ruang profit ke {plan_tp:.2f} terlalu sempit vs risiko {plan_sl:.2f}."
+            if adx >= 25:
+                edge_clarity = "NO SETUP (Tren Kuat, namun R:R belum ideal)"
+                next_trade_plan = f"STRATEGI: {setup_type}. Area Pantau: {plan_entry:.2f}. TAHAN EKSEKUSI: Jarak ke Target ({plan_tp:.2f}) terlalu dekat dibanding Risiko ({plan_sl:.2f}). Tunggu area yang lebih optimal."
+            else:
+                edge_clarity = "NO EDGE (Momentum Lemah & R:R Buruk)"
+                next_trade_plan = f"Abaikan aset. Tren tidak jelas dan ruang profit ke {plan_tp:.2f} terlalu sempit vs risiko {plan_sl:.2f}."
 
 
 
     # AI Reasoning (LLM call — hanya untuk penjelasan)
     # Include additional context for better reasoning
-    alasan = get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, confidence, rr_ratio, risk_level, execution_status, edge_clarity, next_trade_plan)
+    alasan = get_ai_reasoning(
+        symbol, indikator, sentimen, skor_detail, total_skor,
+        sinyal, market_condition, entry_confidence, rr_display,
+        risk_level, execution_status, edge_clarity, next_trade_plan,
+        market_confidence, adx
+    )
 
     # Format Output
     output = format_analysis_output(
