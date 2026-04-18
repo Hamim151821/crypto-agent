@@ -2450,25 +2450,34 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     adx = indikator.get("adx", 0)
     support = indikator.get("support", 0)
     resistance = indikator.get("resistance", 0)
+    current_price = indikator.get("current_price", 0)
     ma20 = indikator.get("ma20", 0)
+    ma50 = indikator.get("ma50", 0)
 
-    # 1. Penentuan Skenario Berdasarkan Trend & Kekuatan ADX (Batas ADX diturunkan ke 20)
-    if "BEARISH" in trend_direction and adx >= 20:
-        setup_type = "SELL PULLBACK (Follow Trend)"
-        plan_entry = ma20 if ma20 > 0 else resistance  # Sell di area pantulan MA20
-        plan_sl = plan_entry * 1.03  # SL 3% di atas entry
+    # Definisikan Tren Makro (Abaikan minor pullback MA20)
+    is_bearish_macro = "TRENDING DOWN" in market_condition or (ma50 > 0 and current_price < ma50)
+    is_bullish_macro = "TRENDING UP" in market_condition or (ma50 > 0 and current_price > ma50)
+
+    # 1. Penentuan Skenario Berdasarkan Trend Makro & ADX
+    if is_bearish_macro and adx >= 25:
+        # Downtrend Kuat -> Sell on Rally (Jangan pernah Buy di Support)
+        setup_type = "SELL ON RALLY (Follow Trend)"
+        plan_entry = resistance if resistance > 0 else (ma20 if current_price < ma20 else current_price * 1.03)
+        plan_sl = plan_entry * 1.03
         plan_tp = support
-        trigger = "Bearish Rejection (Pin Bar/Engulfing) + Volume > 1.2x"
+        trigger = "Bearish Rejection (Pin Bar/Engulfing) + Volume Distribusi > 1.2x"
         invalidasi = f"Tembus & close di atas {plan_sl:.2f}"
-    elif "BULLISH" in trend_direction and adx >= 20:
-        setup_type = "BUY PULLBACK (Follow Trend)"
-        plan_entry = ma20 if ma20 > 0 else support  # Buy di area MA20 (Koreksi Wajar)
-        plan_sl = plan_entry * 0.97  # SL 3% di bawah entry
+    elif is_bullish_macro and adx >= 25:
+        # Uptrend Kuat -> Buy on Dip
+        setup_type = "BUY ON DIP (Follow Trend)"
+        plan_entry = support if support > 0 else (ma20 if current_price > ma20 else current_price * 0.97)
+        plan_sl = plan_entry * 0.97
         plan_tp = resistance
-        trigger = "Bullish Rejection (Pin Bar/Engulfing) + Volume > 1.2x"
+        trigger = "Bullish Rejection (Pin Bar/Engulfing) + Volume Akumulasi > 1.2x"
         invalidasi = f"Tembus & close di bawah {plan_sl:.2f}"
     else:
-        setup_type = "RANGE TRADING"
+        # ADX Lemah (<25) -> Range Trading Valid
+        setup_type = "RANGE TRADING (Sideways)"
         plan_entry = support
         plan_sl = support * 0.97
         plan_tp = resistance
@@ -2481,12 +2490,12 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     else:
         next_trade_plan = "Menunggu konfirmasi struktur harga yang lebih jelas."
 
-    # 3. Perbaiki narasi Edge Clarity agar tidak kontradiktif
+    # 3. Perbaiki narasi Edge Clarity
     if execution_status == "NO TRADE":
-        if total_skor >= 3 or total_skor <= -3:
-            edge_clarity = "MENUNGGU EDGE (Arah tren sudah jelas, namun harga saat ini belum berada di zona pullback yang aman)."
+        if adx >= 25:
+            edge_clarity = "MENUNGGU PULLBACK (Tren kuat terkonfirmasi, namun harga saat ini bukan titik entry probabilitas tinggi)."
         else:
-            edge_clarity = "TIDAK ADA EDGE (Market Choppy, momentum belum terkonfirmasi)."
+            edge_clarity = "TIDAK ADA EDGE (Market Choppy/Sideways, momentum lemah)."
 
 
 
