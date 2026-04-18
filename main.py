@@ -1318,7 +1318,7 @@ def calculate_score(indikator, sentimen, weights, market_condition, trend_direct
         w = weights.get(key, 1.0)
         total += scores[key] * w
     
-    return scores, round(total, 1)
+    return scores, int(total)
 
 # ==============================
 # 8. NO TRADE ZONE & BREAKOUT DETECTION
@@ -1647,6 +1647,13 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     - Jika BUY/SELL, nada pasti
     - Include breakout status untuk konfirmasi
     """
+    # Fallback Initialization
+    alasan = "Menunggu konfirmasi pergerakan harga lebih lanjut."
+    next_trade_plan = next_trade_plan if 'next_trade_plan' in locals() else "Standby. Evaluasi ulang setelah ada konfirmasi dari indikator volume dan tren."
+    current_price = indikator.get("current_price", 0)
+    plan_entry = current_price if current_price > 0 else 0
+    plan_sl = plan_entry * 0.98
+    plan_tp = plan_entry * 1.05
     # Extract trend structure and MA50 from indikator
     ma50 = indikator.get("ma50", 0)
     current_price = indikator.get("current_price", 0)
@@ -2241,6 +2248,14 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
             "skor_detail": {}, "position_size": 0
         }
         return "⚠️ Data indikator tidak tersedia. Coba lagi nanti.", empty_data
+
+    # Fallback Initialization
+    alasan = "Menunggu konfirmasi pergerakan harga lebih lanjut."
+    next_trade_plan = "Standby. Evaluasi ulang setelah ada konfirmasi dari indikator volume dan tren."
+    current_price = indikator.get("current_price", 0)
+    plan_entry = current_price if current_price > 0 else 0
+    plan_sl = plan_entry * 0.98
+    plan_tp = plan_entry * 1.05
     
     # 1. Ambil harga saat ini
     if jenis == "Crypto":
