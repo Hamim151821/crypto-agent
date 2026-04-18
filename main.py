@@ -1262,12 +1262,16 @@ def calculate_score(indikator, sentimen, weights, market_condition, trend_direct
     else:
         scores["volume"] = 0
     
-    # Sentimen Score
+    # Sentimen Score (Micro-Tuning)
     sentimen_skor = sentimen.get("skor", 0)
-    if sentimen_skor > 0.3:
+    if sentimen_skor >= 0.7:
         scores["sentimen"] = 2
-    elif sentimen_skor < -0.3:
+    elif sentimen_skor >= 0.3:
+        scores["sentimen"] = 1
+    elif sentimen_skor <= -0.7:
         scores["sentimen"] = -2
+    elif sentimen_skor <= -0.3:
+        scores["sentimen"] = -1
     else:
         scores["sentimen"] = 0
     
@@ -1625,8 +1629,8 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     except Exception:
         rsi, adx, stoch_str, vol_str, obv_str = 50, 0, "", "", ""
 
-    # 2. Kategori ADX Institusional
-    adx_desc = "Sangat Kuat" if adx >= 30 else ("Kuat" if adx >= 25 else ("Moderate/Mulai Terbentuk" if adx >= 20 else "Lemah/Choppy"))
+    # 2. Kategori ADX Institusional (Kalibrasi Baru)
+    adx_desc = "Sangat Kuat" if adx >= 40 else ("Kuat" if adx >= 25 else ("Moderate/Mulai Terbentuk" if adx >= 20 else "Lemah/Choppy"))
 
     # 3. DETEKTOR KONDISI HARGA & PARADOKS
     kondisi_harga = ""
@@ -1661,8 +1665,9 @@ Status Sistem: {edge_clarity} | System Confidence: {confidence}%
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
 1. DILARANG KERAS menggunakan kata pengantar seperti "Berikut adalah laporan...", "Sistem kami...", atau "Saat ini...". KALIMAT PERTAMA WAJIB langsung mengutip isi dari 'Analisis Mendalam' atau status Tren!
 2. JIKA ada kata "PARADOKS" di Analisis Mendalam, WAJIB jadikan itu sebagai fokus utama penjelasan agar kontradiksi skor dan strategi terjawab secara logis.
-3. JIKA Confidence > 60% (READY), tegaskan bahwa "Sistem hanya menunggu Trigger tervalidasi" (bukan berarti sudah masuk posisi).
-4. DILARANG MERINGKAS ACTION PLAN: Kutip seluruh Strategi, Area Pantau, TP, SL, R:R, dan "ALT" (Skenario Alternatif).
+3. JIKA Status "NO ENTRY YET" atau "NO EDGE": Anda WAJIB mengutip "STRATEGI MASA DEPAN" dari Action Plan secara eksplisit beserta Area Pantau dan Trigger-nya, agar trader tahu apa yang sedang ditunggu.
+4. JIKA Confidence > 60% (READY), tegaskan bahwa "Sistem hanya menunggu Trigger tervalidasi" (bukan berarti sudah masuk posisi).
+5. DILARANG MERINGKAS ACTION PLAN: Kutip seluruh Strategi, Area Pantau, TP, SL, R:R, dan "ALT" (Skenario Alternatif).
 """
 
     try:
@@ -2477,7 +2482,7 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     ma20 = indikator.get("ma20", 0)
     ma50 = indikator.get("ma50", 0)
     vwap = indikator.get("vwap", 0)
-    obv_flow = indikator.get("obv_flow", "NONE")
+    obv_flow = indikator.get("obv_divergence", "NONE")
 
     is_bearish_macro = "TRENDING DOWN" in market_condition or (ma50 > 0 and current_price < ma50)
     is_bullish_macro = "TRENDING UP" in market_condition or (ma50 > 0 and current_price > ma50)
