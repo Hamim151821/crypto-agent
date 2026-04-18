@@ -1617,32 +1617,31 @@ def calculate_data_quality(indikator, berita):
 def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, confidence, rr_ratio, risk_level, execution_status, edge_clarity, next_trade_plan):
     rsi = indikator.get("rsi", 50)
     stoch = indikator.get("stochastic", "")
-    rsi_context = ""
+    obv = indikator.get("obv_flow", "")
+    mean_reversion_context = ""
 
-    if "DOWN" in market_condition and ("OVERSOLD" in str(stoch) or rsi <= 30):
-        rsi_context = "Oversold di Downtrend = Momentum ideal untuk menunggu pullback dan SELL ON RALLY."
-    elif "UP" in market_condition and ("OVERBOUGHT" in str(stoch) or rsi >= 70):
-        rsi_context = "Overbought di Uptrend = Harga rawan koreksi. Momentum ideal untuk menunggu BUY ON DIP."
-    elif "DOWN" in market_condition and ("OVERBOUGHT" in str(stoch) or rsi >= 70):
-        rsi_context = "Overbought di Downtrend = Peluang probabilitas tinggi untuk SELL ON RALLY di area resistance."
-    elif "UP" in market_condition and ("OVERSOLD" in str(stoch) or rsi <= 30):
-        rsi_context = "Oversold di Uptrend = Peluang probabilitas tinggi untuk BUY ON DIP di area support."
+    # Logika Kontradiksi: Skor Bullish, tapi Strategi Sell (Overextended/Mean Reversion)
+    if total_skor >= 3 and "SELL" in next_trade_plan:
+        mean_reversion_context = "PARADOKS: Meskipun Skor Makro sangat Bullish, kondisi Overbought dan/atau Distribusi OBV memicu strategi Mean Reversion (koreksi arah) untuk peluang SELL jangka pendek."
+    elif total_skor <= -3 and "BUY" in next_trade_plan:
+        mean_reversion_context = "PARADOKS: Meskipun Skor Makro sangat Bearish, kondisi Oversold dan/atau Akumulasi OBV memicu strategi Mean Reversion (koreksi arah) untuk peluang BUY jangka pendek."
 
-    prompt = f"""Sebagai AI Quant Trader, buat laporan eksekusi MAKSIMAL 3 KALIMAT untuk {symbol}.
+    prompt = f"""Sebagai AI Quant Trader tingkat lanjut, buat laporan eksekusi MAKSIMAL 4 KALIMAT untuk {symbol}.
 
 [DATA KUANTITATIF]
 Arah Makro: {market_condition} | Skor Total: {total_skor}
 Status: {edge_clarity} | System Confidence: {confidence}%
-Konteks: {rsi_context}
+Jembatan Logika: {mean_reversion_context}
 
 [ACTION PLAN]
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN:
-1. Jika Status "NEUTRAL WATCH": Tegaskan bahwa market sedang Sideways dan harga berada mengambang di tengah range (No Man's Land). Pendekatan kita adalah murni REAKTIF, menunggu harga menyentuh batas Support/Resistance ekstrem.
-2. JIKA Confidence < 40% (NO SETUP/EDGE): Jelaskan bahwa aset ini diabaikan karena tidak memenuhi syarat keamanan. Wajib kutip Strategi Masa Depan dari Action Plan.
-3. JIKA Status "ROADMAP" (40-60%) atau "HIGH PROB WATCHLIST" (>60%): Wajib kutip seluruh Action Plan secara lengkap (Pantau, Trigger, TP, SL, R:R).
-4. Bahasa harus sekelas Fund Manager: Objektif, tidak menebak arah pada saat sideways, dan sangat disiplin.
+1. JIKA Jembatan Logika "PARADOKS" tersedia, WAJIB gunakan kalimat tersebut di awal penjelasan untuk menjembatani mengapa skor dan strategi berlawanan arah.
+2. JIKA Status "READY (High Probability Setup)", tegaskan bahwa sistem siap eksekusi (Tinggal menunggu Trigger).
+3. JIKA Action Plan memiliki "ALT Skenario", wajib sebutkan strategi utama DAN strategi alternatif secara ringkas.
+4. WAJIB mengutip format Action Plan secara akurat (Area Pantau, TP, SL, R:R).
+5. Nada: Sangat teknis, tidak emosional, layaknya Chief Risk Officer Hedge Fund.
 """
 
     try:
@@ -2517,6 +2516,13 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
 
     jarak_entry_pct = abs(current_price - plan_entry) / current_price * 100 if current_price > 0 else 0
 
+    skenario_alternatif = ""
+    if adx < 20: # Hanya di pasar sideways
+        if "SELL" in setup_type:
+            skenario_alternatif = f"ALT Skenario: JIKA Breakout Resistance, beralih ke BUY di area {resistance:.2f}."
+        else:
+            skenario_alternatif = f"ALT Skenario: JIKA Breakdown Support, beralih ke SELL di area {support:.2f}."
+
     # 3. Decision Driver & Confidence Matrix (The Master Core)
     if execution_status == "NO TRADE":
         if potensi_rr < 1.5:
@@ -2539,10 +2545,11 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
                 next_trade_plan = f"TAHAN EKSEKUSI. Market Sideways/Choppy. Harga berada di 'No Man's Land' (Tengah range, berjarak {jarak_entry_pct:.1f}% dari batas terdekat). STRATEGI REAKTIF MASA DEPAN: {setup_type} HANYA JIKA harga menyentuh ekstrim {plan_entry:.2f}."
                 confidence = 0
         else:
-            edge_clarity = "HIGH PROB WATCHLIST (Menunggu Trigger)"
+            edge_clarity = "READY (High Probability Setup)" # Mengubah WATCHLIST jadi READY
             calc_conf = 50 + int(potensi_rr * 5) - int(jarak_entry_pct * 2)
-            confidence = max(60, min(80, calc_conf)) # Range Actionable (>60)
-            next_trade_plan = f"STRATEGI: {setup_type}. PANTAU: {plan_entry:.2f} (Jarak: {jarak_entry_pct:.1f}%). TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}."
+            confidence = max(60, min(80, calc_conf))
+            alt_text = f" {skenario_alternatif}" if skenario_alternatif else ""
+            next_trade_plan = f"STRATEGI UTAMA: {setup_type}. PANTAU: {plan_entry:.2f} (Jarak dekat: {jarak_entry_pct:.1f}%). TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}.{alt_text}"
 
 
 
