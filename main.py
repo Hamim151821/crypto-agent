@@ -1621,44 +1621,44 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
         adx = float(indikator.get("adx", 0))
         stoch_str = str(indikator.get("stochastic", "")).upper()
         vol_str = str(indikator.get("volume", "")).upper()
+        obv_str = str(indikator.get("obv_flow", "")).upper()
     except Exception:
-        rsi, adx, stoch_str, vol_str = 50, 0, "", ""
+        rsi, adx, stoch_str, vol_str, obv_str = 50, 0, "", "", ""
 
-    # 2. Kategori ADX Institusional (Kalibrasi Baru)
+    # 2. Kategori ADX Institusional
     adx_desc = "Sangat Kuat" if adx >= 30 else ("Kuat" if adx >= 25 else ("Moderate/Mulai Terbentuk" if adx >= 20 else "Lemah/Choppy"))
 
-    # 3. Narasi Kondisi Harga (Counter-Trend & Over-extensions)
+    # 3. Narasi Kondisi Harga (Counter-Trend & Hidden Pressure)
     kondisi_harga = ""
-    if "DOWN" in market_condition:
-        if rsi >= 70 or "OVERBOUGHT" in stoch_str:
-            kondisi_harga = "Harga mengalami Counter-Trend Rally (naik sementara) hingga mencapai fase Overbought. Ini memperkuat probabilitas untuk setup SELL ON RALLY di area resistance."
-        elif rsi <= 30 or "OVERSOLD" in stoch_str:
-            kondisi_harga = "Harga mencapai fase Oversold. Sangat berisiko untuk memaksakan SELL sekarang. Taktik optimal: tunggu pantulan naik (Relief Rally)."
-    elif "UP" in market_condition:
-        if rsi <= 30 or "OVERSOLD" in stoch_str:
-            kondisi_harga = "Harga mengalami koreksi hingga mencapai fase Oversold. Ini memperkuat probabilitas untuk setup BUY ON DIP di area support."
-        elif rsi >= 70 or "OVERBOUGHT" in stoch_str:
-            kondisi_harga = "Harga mencapai fase Overbought (Kemahalan). Sangat berisiko untuk memaksakan BUY sekarang. Taktik optimal: tunggu koreksi."
+    if adx < 20: # Rezim Sideways
+        if "DOWN" in market_condition and "DISTRIBUTION" in obv_str:
+            kondisi_harga = "Market Sideways namun berada dalam tekanan Bearish kuat (OBV Distribusi). Peluang terbaik adalah SELL di resistance, sedangkan BUY di support sangat rentan breakdown."
+        elif "UP" in market_condition and "ACCUMULATION" in obv_str:
+            kondisi_harga = "Market Sideways namun disokong tekanan Bullish (OBV Akumulasi). Peluang terbaik adalah BUY di support, sedangkan SELL di resistance sangat rentan breakout."
+    else: # Rezim Trending
+        if "DOWN" in market_condition and (rsi >= 70 or "OVERBOUGHT" in stoch_str):
+            kondisi_harga = "Harga mengalami Counter-Trend Rally hingga Overbought. Ini memperkuat probabilitas setup SELL ON RALLY di resistance."
+        elif "UP" in market_condition and (rsi <= 30 or "OVERSOLD" in stoch_str):
+            kondisi_harga = "Harga terkoreksi hingga Oversold. Ini memperkuat probabilitas setup BUY ON DIP di support."
 
     # 4. Integrasi Volume
-    vol_context = "Volume transaksi yang tinggi semakin memvalidasi signifikansi level ini." if "TINGGI" in vol_str else ""
+    vol_context = "Volume transaksi yang sepi (di bawah normal) menandakan market belum siap bergerak agresif." if "RENDAH" in vol_str or "NORMAL" in vol_str and adx < 20 else ""
 
     prompt = f"""Sebagai AI Quant Trader tingkat lanjut, buat laporan eksekusi (MAKSIMAL 4 KALIMAT) untuk {symbol}.
 
 [DATA KUANTITATIF]
 Tren Makro: {market_condition} | Kekuatan Tren: {adx_desc} (ADX: {adx:.1f})
-Kondisi Spesifik: {kondisi_harga} {vol_context}
+Analisis Mendalam: {kondisi_harga} {vol_context}
 Status Sistem: {edge_clarity} | System Confidence: {confidence}%
 
 [ACTION PLAN LENGKAP]
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN:
-1. DILARANG KERAS menggunakan frasa kaku seperti "Berdasarkan Kondisi Spesifik" atau "Menurut Data Kuantitatif". Rangkai kalimat secara natural layaknya manusia yang sedang menganalisis.
-2. JELASKAN CONFIDENCE: Angka {confidence}% adalah "Probabilitas Setup Masa Depan". JANGAN pernah menyebut "Siap Eksekusi" jika belum ada konfirmasi trigger. Gunakan frasa: "Sistem memantau ketat area high-probability."
-3. WAJIB integrasikan 'Kondisi Spesifik' secara mengalir untuk menjelaskan MENGAPA kita memilih strategi di Action Plan.
-4. WAJIB mengutip format Action Plan secara akurat (Strategi, Area Pantau, Trigger, TP, SL, R:R).
-5. Nada Bahasa: Sangat dingin, sabar, dan terstruktur layaknya Hedge Fund Manager yang tidak pernah FOMO.
+1. JIKA 'Analisis Mendalam' memiliki teks, WAJIB integrasikan kalimat tersebut untuk menjelaskan logika di balik setup kita secara elegan.
+2. DILARANG MERINGKAS ACTION PLAN: Kutip seluruh Strategi, Area Pantau, TP, SL, R:R, dan yang terpenting "ALT" (Skenario Alternatif) agar sistem terlihat memiliki proteksi dua arah.
+3. JIKA Confidence < 50%, jelaskan secara teknis bahwa keyakinan dipangkas karena "melawan tekanan arus (Counter-Trend)" atau "berada di tengah rentang yang tidak jelas".
+4. Nada Bahasa: Layaknya Chief Risk Officer—fokus pada manajemen risiko, probabilitas, dan tidak memaksakan *entry* jika tidak aman.
 """
 
     try:
@@ -2504,25 +2504,45 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
             trigger = "Bullish Engulfing/Pin Bar + Vol > MA20"
             invalidasi = f"Close di bawah {plan_sl:.2f}"
     else:
-        # REACTIVE RANGE TRADING (Sideways/Choppy)
-        # Bot akan bereaksi berdasarkan batas mana yang lebih dekat dengan harga saat ini
+        # SMART REACTIVE RANGE TRADING (Sideways/Choppy)
         jarak_ke_support = abs(current_price - support)
         jarak_ke_res = abs(resistance - current_price)
 
-        if jarak_ke_support <= jarak_ke_res:
-            setup_type = "REACTIVE RANGE BUY (Support Bounce)"
-            plan_entry = support
-            plan_sl = support * 0.97
-            plan_tp = resistance
-            trigger = "Bullish Rejection Valid di Support + Vol > MA20"
-            invalidasi = f"Close kuat di bawah {plan_sl:.2f}"
-        else:
-            setup_type = "REACTIVE RANGE SELL (Resistance Rejection)"
+        # Deteksi Tekanan Tersembunyi (Hidden Pressure)
+        if is_bearish_macro and "Distribution" in obv_flow:
+            setup_type = "REACTIVE RANGE SELL (Searah Tren & OBV)"
             plan_entry = resistance
             plan_sl = resistance * 1.03
             plan_tp = support
-            trigger = "Bearish Rejection Valid di Resistance + Vol > MA20"
+            trigger = "Bearish Rejection Valid + Vol > MA20"
             invalidasi = f"Close kuat di atas {plan_sl:.2f}"
+            skenario_alternatif = f"ALT: Counter-Trend BUY di {support:.2f} SANGAT BERISIKO karena tekanan Distribusi OBV. Rentan Breakdown."
+        elif is_bullish_macro and "Accumulation" in obv_flow:
+            setup_type = "REACTIVE RANGE BUY (Searah Tren & OBV)"
+            plan_entry = support
+            plan_sl = support * 0.97
+            plan_tp = resistance
+            trigger = "Bullish Rejection Valid + Vol > MA20"
+            invalidasi = f"Close kuat di bawah {plan_sl:.2f}"
+            skenario_alternatif = f"ALT: Counter-Trend SELL di {resistance:.2f} SANGAT BERISIKO karena tekanan Akumulasi OBV. Rentan Breakout."
+        else:
+            # Sideways Murni (Netral), pilih yang terdekat
+            if jarak_ke_support <= jarak_ke_res:
+                setup_type = "REACTIVE RANGE BUY (Support Bounce)"
+                plan_entry = support
+                plan_sl = support * 0.97
+                plan_tp = resistance
+                trigger = "Bullish Rejection Valid di Support + Vol > MA20"
+                invalidasi = f"Close kuat di bawah {plan_sl:.2f}"
+                skenario_alternatif = f"ALT: Jika Breakdown Support, beralih ke SELL."
+            else:
+                setup_type = "REACTIVE RANGE SELL (Resistance Rejection)"
+                plan_entry = resistance
+                plan_sl = resistance * 1.03
+                plan_tp = support
+                trigger = "Bearish Rejection Valid di Resistance + Vol > MA20"
+                invalidasi = f"Close kuat di atas {plan_sl:.2f}"
+                skenario_alternatif = f"ALT: Jika Breakout Resistance, beralih ke BUY."
 
     # 2. Probability & R:R Calculation
     potensi_rr = 0
@@ -2540,33 +2560,32 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         else:
             skenario_alternatif = f"ALT Skenario: JIKA Breakdown Support, beralih ke SELL di area {support:.2f}."
 
-    # 3. Decision Driver & Confidence Matrix (The Master Core)
+    # 3. Decision Driver & Confidence Matrix
     if execution_status == "NO TRADE":
         if potensi_rr < 1.5:
             edge_clarity = "NO ENTRY YET (Proyeksi R:R Buruk)"
-            next_trade_plan = f"TAHAN EKSEKUSI. Bias arah valid untuk {setup_type}, namun proyeksi matematis R:R saat ini (1:{potensi_rr:.1f}) di bawah standar institusi (Min 1:1.5). Menunggu harga terkoreksi ke area yang memberikan rasio risiko lebih aman."
+            next_trade_plan = f"TAHAN EKSEKUSI. R:R saat ini (1:{potensi_rr:.1f}) di bawah standar institusi. Menunggu harga terkoreksi ke area yang lebih aman."
             confidence = 0
-        elif ("BUY" in setup_type and "Distribution" in obv_flow) or ("SELL" in setup_type and "Accumulation" in obv_flow):
-            edge_clarity = "NO EDGE (Melawan Arus Volume)"
-            next_trade_plan = f"Abaikan eksekusi saat ini. Terdeteksi anomali volume (OBV tidak searah tren). STRATEGI MASA DEPAN: {setup_type} hanya jika OBV sinkron."
-            confidence = 0
-        elif jarak_entry_pct > 4.0:
-            # ROADMAP OVERRIDE: Jangan buang jika ADX Kuat (>=25) ATAU Skor Kuat
-            if adx >= 25 or total_skor >= 3 or total_skor <= -3:
-                edge_clarity = "ROADMAP (Long-Term Watchlist)"
-                next_trade_plan = f"ROADMAP: Tren makro terkonfirmasi kuat (ADX {adx:.1f}), namun harga masih berjarak {jarak_entry_pct:.1f}%. TAHAN EKSEKUSI. Tunggu harga mendekat. STRATEGI: {setup_type} | PANTAU: {plan_entry:.2f} | TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}."
-                confidence = 45 # Masuk Watchlist Range
-            else:
-                # Khusus Sideways / Tren Lemah yang harganya di tengah-tengah
-                edge_clarity = "NEUTRAL WATCH (Harga di Tengah Range)"
-                next_trade_plan = f"TAHAN EKSEKUSI. Market Sideways/Choppy. Harga berada di 'No Man's Land' (Tengah range, berjarak {jarak_entry_pct:.1f}% dari batas terdekat). STRATEGI REAKTIF MASA DEPAN: {setup_type} HANYA JIKA harga menyentuh ekstrim {plan_entry:.2f}."
-                confidence = 0
         else:
-            edge_clarity = "READY (High Probability Setup)" # Mengubah WATCHLIST jadi READY
             calc_conf = 50 + int(potensi_rr * 5) - int(jarak_entry_pct * 2)
-            confidence = max(60, min(80, calc_conf))
-            alt_text = f" {skenario_alternatif}" if skenario_alternatif else ""
-            next_trade_plan = f"STRATEGI UTAMA: {setup_type}. PANTAU: {plan_entry:.2f} (Jarak dekat: {jarak_entry_pct:.1f}%). TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}.{alt_text}"
+
+            # CONFIDENCE PENALTY: Diskon keyakinan jika melawan arus atau jarak jauh
+            if "Counter-Trend" in skenario_alternatif or ("Bearish" in market_condition and "BUY" in setup_type):
+                calc_conf -= 20 # Penalti berat melawan tren
+            if jarak_entry_pct > 4.0:
+                calc_conf -= 15 # Penalti jarak
+
+            confidence = max(0, min(80, calc_conf))
+
+            if confidence < 40:
+                edge_clarity = "NEUTRAL WATCH (Risiko Tinggi/Harga di Tengah)"
+                next_trade_plan = f"TAHAN EKSEKUSI. Harga mengambang di 'No Man's Land' atau berisiko tinggi. STRATEGI: {setup_type} | PANTAU: {plan_entry:.2f} | R:R 1:{potensi_rr:.1f}. {skenario_alternatif}"
+            elif confidence <= 60:
+                edge_clarity = "ROADMAP (Watchlist Menengah)"
+                next_trade_plan = f"STRATEGI: {setup_type}. PANTAU: {plan_entry:.2f} (Jarak: {jarak_entry_pct:.1f}%). TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. {skenario_alternatif}"
+            else:
+                edge_clarity = "READY (High Probability Setup)"
+                next_trade_plan = f"STRATEGI: {setup_type}. PANTAU KETAT: {plan_entry:.2f} (Jarak ideal: {jarak_entry_pct:.1f}%). TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}. {skenario_alternatif}"
 
 
 
