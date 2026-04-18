@@ -1961,6 +1961,15 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
 
     Returns: (formatted_output_string, analysis_data_dict)
     """
+    # --- ULTIMATE FAILSAFE INITIALIZATION ---
+    risk_pct_display = "-"
+    ui_entry = "-"
+    ui_sl = "-"
+    ui_tp = "-"
+    ui_rr = "-"
+    ui_status = "STANDBY"
+    # ----------------------------------------
+
     # --- GLOBAL PATCH UNTUK OBV & TIPE DATA ---
     try:
         obv_val = float(indikator.get("obv", 0))
@@ -2619,14 +2628,6 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
                 next_trade_plan = f"STRATEGI: {setup_type}. PANTAU KETAT: {plan_entry:.2f} (Jarak ideal: {jarak_entry_pct:.1f}%). TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}. {skenario_alternatif}"
 
     # --- GLOBAL UI SYNC UNTUK RISK MANAGEMENT & STATUS ---
-    # FORCE INITIALIZE (Mencegah UnboundLocalError)
-    risk_pct_display = "-"
-    ui_entry = "-"
-    ui_sl = "-"
-    ui_tp = "-"
-    ui_rr = "-"
-    ui_status = "NO TRADE"
-
     if confidence >= 60:
         ui_entry = f"{plan_entry:.2f}"
         ui_sl = f"{plan_sl:.2f}"
