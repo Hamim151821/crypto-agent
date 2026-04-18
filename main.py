@@ -1617,36 +1617,41 @@ def calculate_data_quality(indikator, berita):
 def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, confidence, rr_ratio, risk_level, execution_status, edge_clarity, next_trade_plan):
     rsi = indikator.get("rsi", 50)
     stoch = indikator.get("stochastic", "")
-    obv = indikator.get("obv_flow", "")
-    mean_reversion_context = ""
+    adx = indikator.get("adx", 0)
 
-    # Logika Kontradiksi: Skor Bullish, tapi Strategi Sell (Overextended/Mean Reversion)
-    if total_skor >= 3 and "SELL" in next_trade_plan:
-        mean_reversion_context = "PARADOKS: Meskipun Skor Makro sangat Bullish, kondisi Overbought dan/atau Distribusi OBV memicu strategi Mean Reversion (koreksi arah) untuk peluang SELL jangka pendek."
-    elif total_skor <= -3 and "BUY" in next_trade_plan:
-        mean_reversion_context = "PARADOKS: Meskipun Skor Makro sangat Bearish, kondisi Oversold dan/atau Akumulasi OBV memicu strategi Mean Reversion (koreksi arah) untuk peluang BUY jangka pendek."
+    # Kategori ADX Institusional
+    adx_desc = "Sangat Kuat" if adx >= 25 else ("Moderate/Mulai Terbentuk" if adx >= 20 else "Lemah/Choppy")
 
-    prompt = f"""Sebagai AI Quant Trader tingkat lanjut, buat laporan eksekusi MAKSIMAL 4 KALIMAT untuk {symbol}.
+    # Jembatan Logika (Overbought/Oversold & Mean Reversion)
+    jembatan_logika = ""
+    if "UP" in market_condition and ("OVERBOUGHT" in str(stoch) or rsi >= 70):
+        jembatan_logika = "Meskipun arah tren Bullish, kondisi saat ini OVERBOUGHT (Harga kemahalan/rawan koreksi). Secara probabilitas, sangat berisiko untuk memaksakan entry sekarang. Taktik optimal adalah menunggu koreksi (BUY ON DIP)."
+    elif "DOWN" in market_condition and ("OVERSOLD" in str(stoch) or rsi <= 30):
+        jembatan_logika = "Meskipun arah tren Bearish, kondisi saat ini OVERSOLD (Harga jenuh jual/di lembah). Secara probabilitas, sangat berisiko untuk melakukan short sekarang. Taktik optimal adalah menunggu pantulan naik (SELL ON RALLY)."
+
+    prompt = f"""Sebagai AI Quant Trader tingkat lanjut, buat laporan eksekusi (MAKSIMAL 4 KALIMAT) untuk {symbol}.
 
 [DATA KUANTITATIF]
-Arah Makro: {market_condition} | Skor Total: {total_skor}
-Status: {edge_clarity} | System Confidence: {confidence}%
-Jembatan Logika: {mean_reversion_context}
+Tren Makro: {market_condition} | Kekuatan Tren: {adx_desc} (ADX: {adx:.1f})
+Skor Total: {total_skor} | Status Sistem: {edge_clarity}
+System Confidence: {confidence}%
+Jembatan Logika: {jembatan_logika}
 
 [ACTION PLAN]
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN:
-1. JIKA Jembatan Logika "PARADOKS" tersedia, WAJIB gunakan kalimat tersebut di awal penjelasan.
-2. JIKA Status "READY", tegaskan bahwa sistem siap eksekusi dan memantau ketat area pantau.
-3. JIKA Status "NO ENTRY YET" atau "NO EDGE" (Confidence 0%): MAKSIMAL 2 KALIMAT. Jelaskan bahwa proyeksi R:R atau jarak harga telah dihitung, namun ditolak oleh sistem pengaman. WAJIB sebutkan Bias Arah (contoh: "Bias arah valid untuk Sell On Rally, namun...") agar tetap selaras dengan kekuatan tren (ADX).
-4. JIKA Status "ROADMAP" atau "READY": Wajib kutip format Action Plan secara akurat (Area Pantau, Trigger, TP, SL, R:R).
-5. Nada: Sangat teknis, analitis, dan tidak emosional.
+1. AKURASI TREN: WAJIB gunakan deskripsi kekuatan tren sesuai data ("{adx_desc}"). DILARANG menyebutnya "kuat" jika ADX di bawah 25!
+2. JELASKAN CONFIDENCE: Jika Confidence < 50%, jelaskan secara eksplisit bahwa angka ini rendah KARENA "jarak harga saat ini masih terlalu jauh dari area eksekusi ideal."
+3. FUNGSI JEMBATAN LOGIKA: Jika 'Jembatan Logika' memiliki isi teks, WAJIB gunakan kalimat tersebut di awal narasi untuk menjelaskan alasan strategi menunggu kita.
+4. DEFINISI ROADMAP: Jika Status Sistem adalah ROADMAP, tegaskan di awal kalimat bahwa "Aset ini dimasukkan ke dalam Watchlist Jangka Panjang."
+5. WAJIB mengutip format Action Plan secara akurat (Strategi, Area Pantau, Trigger, TP, SL, R:R).
+6. Nada Bahasa: Profesional, menjelaskan "Sebab-Akibat", dan tidak melompat pada kesimpulan buta.
 """
 
     try:
         response = client.chat.completions.create(
-            model="meta-llama/llama-3.3-70b-instruct",
+            model="meta-llama-llama-3.3-70b-instruct",
             max_tokens=400,
             messages=[{"role": "user", "content": prompt}]
         )
