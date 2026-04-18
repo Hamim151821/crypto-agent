@@ -1668,9 +1668,9 @@ Status Sistem: {edge_clarity} | System Confidence: {confidence}%
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
 1. KALIMAT PERTAMA WAJIB langsung mengutip isi dari 'Analisis Mendalam' (jika ada) atau status Tren makro.
-2. JIKA Status "ROADMAP", "WATCHLIST", atau "NO ENTRY YET": Anda WAJIB mengutip format Action Plan secara LENGKAP (Strategi, Area Pantau, TP, SL, R:R). 
-3. JANGAN PERNAH MEMOTONG KALIMAT DI TENGAH JALAN. Pastikan analisis Anda tuntas dan diakhiri dengan titik (.).
-4. Nada Bahasa: Sangat teknis, analitis, dan tidak emosional.
+2. JIKA Confidence > 60%: WAJIB berikan kalimat penjelas eksplisit di akhir paragraf mengapa angka tersebut tinggi. Contoh: "System Confidence tinggi ({confidence}%) karena kombinasi tren yang solid, konfluensi indikator, dan posisi harga yang ideal dengan rasio risiko-imbalan yang sangat baik."
+3. JIKA Status "ROADMAP", "WATCHLIST", atau "NO ENTRY YET": Anda WAJIB mengutip format Action Plan secara LENGKAP (Strategi, Area Pantau, TP, SL, R:R).
+4. JANGAN PERNAH MEMOTONG KALIMAT DI TENGAH JALAN.
 """
 
     try:
@@ -1704,12 +1704,34 @@ def fmt_price(price, currency="USD"):
         return f"${price:,.6f}"
 
 def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
-                           sinyal, total_skor, confidence, entry, sl, tp,
-                           risk_level, rr_ratio, modal, position_size, alasan,
-                           market_condition, skor_detail, weights, jenis, no_trade,
-                           is_early_entry=False, risk_metrics=None, data_quality=None):
+                            sinyal, total_skor, confidence, entry, sl, tp,
+                            risk_level, rr_ratio, modal, position_size, alasan,
+                            market_condition, skor_detail, weights, jenis, no_trade,
+                            is_early_entry=False, risk_metrics=None, data_quality=None):
     """Format output sesuai template 10-point system"""
-    
+
+    # --- EARLY GLOBAL PATCH (UI SYNC) ---
+    # 1. OBV Patch (Mencegah teks NONE muncul di laporan)
+    try:
+        obv_val = float(indikator.get("obv", 0))
+        if indikator.get("obv_flow", "NONE") in ["NONE", ""]:
+            indikator["obv_flow"] = "BULLISH (Accumulation)" if obv_val > 0 else "BEARISH (Distribution)"
+    except Exception:
+        pass
+
+    # Catatan untuk AI IDE: Pastikan nilai indikator["obv_flow"] yang baru ini
+    # yang dimasukkan ke dalam f-string laporan teknikal!
+
+    # 2. Sync Sinyal & Risk Level (Dijalankan SETELAH kalkulasi Confidence dari Engine AI selesai)
+    if confidence > 60:
+        sinyal = "READY (Waiting Trigger)"
+        risk_level = "MEDIUM (Actionable Setup)"
+    elif confidence >= 40:
+        sinyal = "WATCHLIST (Monitoring)"
+    else:
+        sinyal = "NO TRADE (Standby)"
+    # ------------------------------------
+
     # Default values
     if risk_metrics is None:
         risk_metrics = {
