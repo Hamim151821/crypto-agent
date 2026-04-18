@@ -1628,13 +1628,17 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     # 2. Kategori ADX Institusional
     adx_desc = "Sangat Kuat" if adx >= 30 else ("Kuat" if adx >= 25 else ("Moderate/Mulai Terbentuk" if adx >= 20 else "Lemah/Choppy"))
 
-    # 3. Narasi Kondisi Harga (Counter-Trend & Hidden Pressure)
+    # 3. DETEKTOR KONDISI HARGA & PARADOKS
     kondisi_harga = ""
     if adx < 20: # Rezim Sideways
-        if "DOWN" in market_condition and "DISTRIBUTION" in obv_str:
-            kondisi_harga = "Market Sideways namun berada dalam tekanan Bearish kuat (OBV Distribusi). Peluang terbaik adalah SELL di resistance, sedangkan BUY di support sangat rentan breakdown."
+        if total_skor >= 5 and "SELL" in next_trade_plan:
+            kondisi_harga = f"PARADOKS: Meskipun Skor Makro sangat Bullish (+{total_skor}), market sedang Sideways dan harga mepet Resistance. Strategi dikalibrasi menjadi Counter-Trend Short (Range Sell) untuk mengeksploitasi potensi rejection."
+        elif total_skor <= -5 and "BUY" in next_trade_plan:
+            kondisi_harga = f"PARADOKS: Meskipun Skor Makro sangat Bearish ({total_skor}), market sedang Sideways dan harga mepet Support. Strategi dikalibrasi menjadi Counter-Trend Long (Range Buy) untuk mengeksploitasi potensi bounce."
+        elif "DOWN" in market_condition and "DISTRIBUTION" in obv_str:
+            kondisi_harga = "Market Sideways namun berada dalam tekanan Bearish kuat (OBV Distribusi). Peluang terbaik adalah SELL di resistance."
         elif "UP" in market_condition and "ACCUMULATION" in obv_str:
-            kondisi_harga = "Market Sideways namun disokong tekanan Bullish (OBV Akumulasi). Peluang terbaik adalah BUY di support, sedangkan SELL di resistance sangat rentan breakout."
+            kondisi_harga = "Market Sideways namun disokong tekanan Bullish (OBV Akumulasi). Peluang terbaik adalah BUY di support."
     else: # Rezim Trending
         if "DOWN" in market_condition and (rsi >= 70 or "OVERBOUGHT" in stoch_str):
             kondisi_harga = "Harga mengalami Counter-Trend Rally hingga Overbought. Ini memperkuat probabilitas setup SELL ON RALLY di resistance."
@@ -1654,11 +1658,11 @@ Status Sistem: {edge_clarity} | System Confidence: {confidence}%
 [ACTION PLAN LENGKAP]
 {next_trade_plan}
 
-ATURAN MUTLAK PENULISAN:
-1. JIKA 'Analisis Mendalam' memiliki teks, WAJIB integrasikan kalimat tersebut untuk menjelaskan logika di balik setup kita secara elegan.
-2. DILARANG MERINGKAS ACTION PLAN: Kutip seluruh Strategi, Area Pantau, TP, SL, R:R, dan yang terpenting "ALT" (Skenario Alternatif) agar sistem terlihat memiliki proteksi dua arah.
-3. JIKA Confidence < 50%, jelaskan secara teknis bahwa keyakinan dipangkas karena "melawan tekanan arus (Counter-Trend)" atau "berada di tengah rentang yang tidak jelas".
-4. Nada Bahasa: Layaknya Chief Risk Officer—fokus pada manajemen risiko, probabilitas, dan tidak memaksakan *entry* jika tidak aman.
+ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
+1. DILARANG KERAS menggunakan kata pengantar seperti "Berikut adalah laporan...", "Sistem kami...", atau "Saat ini...". KALIMAT PERTAMA WAJIB langsung mengutip isi dari 'Analisis Mendalam' atau status Tren!
+2. JIKA ada kata "PARADOKS" di Analisis Mendalam, WAJIB jadikan itu sebagai fokus utama penjelasan agar kontradiksi skor dan strategi terjawab secara logis.
+3. JIKA Confidence > 60% (READY), tegaskan bahwa "Sistem hanya menunggu Trigger tervalidasi" (bukan berarti sudah masuk posisi).
+4. DILARANG MERINGKAS ACTION PLAN: Kutip seluruh Strategi, Area Pantau, TP, SL, R:R, dan "ALT" (Skenario Alternatif).
 """
 
     try:
