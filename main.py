@@ -1638,7 +1638,7 @@ def calculate_data_quality(indikator, berita):
 # ==============================
 # AI REASONING (LLM untuk alasan saja)
 # ==============================
-def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition):
+def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, confidence, rr_ratio):
     """
     Alasan WAJIB:
     - Sesuai data yang ditampilkan
@@ -1908,6 +1908,43 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
         dominant_signal = "Struktur Trend Jauh LEBIH DOMINAN daripada status Overbought."
     else:
         dominant_signal = "Tidak ada konflik utama antar indikator."
+
+    # === TRADE EXECUTION ENGINE ===
+    # Kalkulasi Level Eksekusi
+    entry_price = current_price  # Default to current_price, or support for buy on weakness
+    if "BUY" in sinyal.upper() and "PULLBACK" in sinyal.upper() and support > 0:
+        entry_price = support  # For buy on weakness
+
+    sl_price = support * 0.98 if support > 0 else current_price * 0.95  # 2% below support
+    tp_price = resistance if resistance > 0 else current_price * 1.05  # At resistance
+
+    # Risk Reward Ratio
+    risk_reward_ratio = ""
+    if entry_price > 0 and sl_price > 0 and tp_price != entry_price:
+        risk = abs(entry_price - sl_price)
+        reward = abs(tp_price - entry_price)
+        if risk > 0:
+            rr_value = reward / risk
+            risk_reward_ratio = f"1 : {rr_value:.1f}"
+
+    # Edge Clarity
+    rr_numeric = float(risk_reward_ratio.split(" : ")[1]) if " : " in risk_reward_ratio else 0
+    if confidence >= 60 and rr_numeric >= 1.5:
+        edge_clarity = "EDGE DITEMUKAN: Setup sejalan dengan tren dan memiliki Risk/Reward yang logis (> 1:1.5)."
+    else:
+        edge_clarity = "TIDAK ADA EDGE: Konfirmasi sinyal lemah atau Risk/Reward tidak ideal."
+
+    # Execution Setup
+    adx = indikator.get("adx", 0)
+    ma20 = indikator.get("ma20", 0)
+    if "TIDAK ADA EDGE" in edge_clarity:
+        execution_setup = "NO TRADE. Abaikan spekulasi."
+    elif "BULLISH" in trend_direction and adx > 20:
+        execution_setup = f"BUY PULLBACK. Entry area: {ma20:.2f} - {current_price:.2f}. SL ketat di {sl_price:.2f}. TP di {tp_price:.2f}."
+    elif "SIDEWAYS" in market_condition:
+        execution_setup = f"RANGE TRADE BUY. Entry di Support {support:.2f}. SL di {sl_price:.2f}. TP di {resistance:.2f}."
+    else:
+        execution_setup = "HOLD. Tunggu konfirmasi tren."
 
     prompt = f"""Kamu adalah Senior Quant Analyst dari Hedge Fund. Berikan analisis tajam, sintesis indikator yang saling bertentangan, dan patuhi aturan market regime. Maksimal 4 kalimat Bahasa Indonesia.
 
@@ -2662,7 +2699,7 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     
     # AI Reasoning (LLM call — hanya untuk penjelasan)
     # Include additional context for better reasoning
-    alasan = get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition)
+    alasan = get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, confidence, rr_ratio)
     
     # Final contradiction check - perbaiki alasan jika berkontradiksi
     # Jika alasan menyebut bullish tapi trend bearish kuat → perbaiki
