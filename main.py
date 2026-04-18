@@ -2439,7 +2439,7 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     else:
         execution_status = "HOLD"
 
-    # === THE "NEXT TRADE PLAN" ENGINE (PRECISION INSTITUTIONAL LOGIC V2) ===
+    # === THE "NEXT TRADE PLAN" ENGINE (ANTI-FOMO & STRICT R:R LOGIC) ===
     adx = indikator.get("adx", 0)
     support = indikator.get("support", 0)
     resistance = indikator.get("resistance", 0)
@@ -2459,66 +2459,33 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     trigger = ""
     invalidasi = ""
 
-    adx_status = "Kuat" if adx >= 25 else ("Emerging/Mulai Terbentuk" if adx >= 20 else "Lemah/Sideways")
-
-    # 1. Regime Detection & Invalidasi Logic
+    # 1. Regime Detection
     if adx >= 20:
         if is_bearish_macro:
-            if current_price <= support * 1.02:
-                setup_type = f"SELL ON BREAKDOWN (Trend {adx_status})"
-                plan_entry = support * 0.99
-                plan_sl = support * 1.02
-                plan_tp = support * 0.90
-                trigger = "Breakdown Support + Volume > MA20 Vol"
-                invalidasi = f"Close kembali di atas {plan_sl:.2f} (Fake Breakout)"
-            else:
-                setup_type = f"SELL ON RALLY (Trend {adx_status})"
-                dynamic_res = ma20 if current_price < ma20 else vwap
-                plan_entry = dynamic_res if dynamic_res > current_price else resistance
-                plan_sl = plan_entry * 1.03
-                plan_tp = support
-                trigger = "Bearish Rejection (Pin Bar/Engulfing) + Volume > MA20 Vol"
-                invalidasi = f"Tembus & Close di atas {plan_sl:.2f}"
-        elif is_bullish_macro:
-            if current_price >= resistance * 0.98:
-                setup_type = f"BUY ON BREAKOUT (Trend {adx_status})"
-                plan_entry = resistance * 1.01
-                plan_sl = resistance * 0.98
-                plan_tp = resistance * 1.10
-                trigger = "Breakout Resistance + Volume > MA20 Vol"
-                invalidasi = f"Close kembali di bawah {plan_sl:.2f} (Fake Breakout)"
-            else:
-                setup_type = f"BUY ON DIP (Trend {adx_status})"
-                dynamic_sup = ma20 if current_price > ma20 else vwap
-                plan_entry = dynamic_sup if dynamic_sup > support else support
-                plan_sl = plan_entry * 0.97
-                plan_tp = resistance
-                trigger = "Bullish Rejection (Pin Bar/Engulfing) + Volume > MA20 Vol"
-                invalidasi = f"Tembus & Close di bawah {plan_sl:.2f}"
-    else:
-        if is_bullish_macro:
-            setup_type = "ACCUMULATION BUY (Bias Bullish)"
-            plan_entry = support
-            plan_sl = support * 0.97
-            plan_tp = resistance
-            trigger = "Rejection Valid di Support + Volume > MA20 Vol"
-            invalidasi = f"Tembus & Close di bawah {plan_sl:.2f}"
-        elif is_bearish_macro:
-            setup_type = "DISTRIBUTION SELL (Bias Bearish)"
-            plan_entry = resistance
-            plan_sl = resistance * 1.03
+            setup_type = "SELL ON RALLY"
+            dynamic_res = ma20 if current_price < ma20 else vwap
+            plan_entry = dynamic_res if dynamic_res > current_price else resistance
+            plan_sl = plan_entry * 1.03
             plan_tp = support
-            trigger = "Rejection Valid di Resistance + Volume > MA20 Vol"
+            trigger = "Bearish Rejection (Pin Bar/Engulfing) + Vol > MA20 Vol"
             invalidasi = f"Tembus & Close di atas {plan_sl:.2f}"
-        else:
-            setup_type = "RANGE TRADING (Neutral)"
-            plan_entry = support
-            plan_sl = support * 0.97
+        elif is_bullish_macro:
+            setup_type = "BUY ON DIP"
+            dynamic_sup = ma20 if current_price > ma20 else vwap
+            plan_entry = dynamic_sup if dynamic_sup > support else support
+            plan_sl = plan_entry * 0.97
             plan_tp = resistance
-            trigger = "Pantulan S/R + Vol > MA20 Vol"
-            invalidasi = f"Tembus S/R (SL: {plan_sl:.2f})"
+            trigger = "Bullish Rejection (Pin Bar/Engulfing) + Vol > MA20 Vol"
+            invalidasi = f"Tembus & Close di bawah {plan_sl:.2f}"
+    else:
+        setup_type = "RANGE TRADING"
+        plan_entry = support
+        plan_sl = support * 0.97
+        plan_tp = resistance
+        trigger = "Pantulan S/R + Vol > MA20 Vol"
+        invalidasi = f"Tembus S/R (SL: {plan_sl:.2f})"
 
-    # 2. R:R & Probability Calculation
+    # 2. Probability & R:R Calculation
     potensi_rr = 0
     if plan_entry > 0 and plan_sl > 0 and plan_entry != plan_sl:
         risk = abs(plan_entry - plan_sl)
@@ -2526,26 +2493,21 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         potensi_rr = reward / risk if risk > 0 else 0
 
     jarak_entry_pct = abs(current_price - plan_entry) / current_price * 100 if current_price > 0 else 0
-    probabilitas_setup = "Tinggi (Dekat area pantau)" if jarak_entry_pct <= 3 else "Rendah (Butuh pergerakan harga signifikan)"
 
-    market_confidence = min(100, int(adx * 2.5)) if adx >= 20 else int(adx * 1.5)
-    entry_confidence = confidence if execution_status != "NO TRADE" else 0
-
-    # 3. Finalization: Edge Clarity
+    # 3. Finalization: Anti-FOMO Filter
     if execution_status == "NO TRADE":
-        if "BUY" in setup_type and "Distribution" in obv_flow:
-            edge_clarity = "NO EDGE (Distribusi Institusi Kuat)"
-            next_trade_plan = "Abaikan setup Buy. Terdeteksi tekanan jual (OBV Bearish)."
+        if jarak_entry_pct > 3.0:
+            edge_clarity = "NO SETUP (Jarak Terlalu Jauh)"
+            next_trade_plan = f"Abaikan aset ini sementara. Harga masih terlalu jauh ({jarak_entry_pct:.1f}%) dari area ideal. Setup detail disembunyikan untuk mencegah overtrading."
+            confidence = 0
         elif potensi_rr >= 1.2:
-            edge_clarity = "WATCHLIST (Menunggu Setup Valid)"
-            next_trade_plan = f"STRATEGI: {setup_type}. Area Pantau: {plan_entry:.2f} (Jarak: {jarak_entry_pct:.1f}% | Probabilitas Sentuh: {probabilitas_setup}). TRIGGER: {trigger}. TARGET: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R = 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}."
+            edge_clarity = "WATCHLIST (Area Probabilitas Tinggi)"
+            next_trade_plan = f"STRATEGI: {setup_type}. Area Pantau: {plan_entry:.2f}. TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}."
+            confidence = 50
         else:
-            if adx >= 20:
-                edge_clarity = "NO SETUP (Momentum ada, R:R buruk)"
-                next_trade_plan = f"STRATEGI: {setup_type}. Area Pantau: {plan_entry:.2f}. TAHAN EKSEKUSI: Jarak ke Target terlalu dekat dibanding Risiko. BATAL JIKA: {invalidasi}."
-            else:
-                edge_clarity = "NO EDGE (Momentum Lemah & R:R Buruk)"
-                next_trade_plan = f"Abaikan aset. Tren tidak jelas (ADX < 20) dan ruang profit sempit."
+            edge_clarity = "NO EDGE (R:R Buruk)"
+            next_trade_plan = f"Abaikan aset. Ruang profit ke target terlalu sempit. R:R tidak memenuhi standar institusi (1:{potensi_rr:.1f})."
+            confidence = 0
 
 
 
