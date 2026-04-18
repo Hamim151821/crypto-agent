@@ -1635,12 +1635,11 @@ Konteks Tambahan: {rsi_context}
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN:
-1. WAJIB JELASKAN MATRIX CONFIDENCE INI SECARA LOGIS:
-   - Jika Confidence < 40%: Tegaskan aset diabaikan (Jangan sebut TP/SL).
-   - Jika Confidence 40-60%: Tegaskan aset masuk "Watchlist/Roadmap" untuk dipantau jangka panjang. Wajib kutip seluruh Action Plan.
-   - Jika Confidence > 60%: Tegaskan aset "Actionable" atau siap dieksekusi dekat area pantau. Wajib kutip seluruh Action Plan.
-2. JIKA skor tinggi (>3) namun Confidence masih 45% (Roadmap), jelaskan bahwa: "Meskipun skor makro sangat kuat, eksekusi ditahan karena harga saat ini belum berada di zona timing yang ideal."
-3. Jangan bertele-tele. Langsung analisa.
+1. DILARANG KERAS menggunakan kalimat "tidak ada rencana", "diabaikan total", atau sejenisnya. Trader profesional selalu memiliki "Future Edge" (Rencana Masa Depan).
+2. Jika Confidence < 40% (NO SETUP/NO EDGE): Jelaskan alasan penahanan eksekusi, TETAPI WAJIB sebutkan "STRATEGI MASA DEPAN" yang ada di Action Plan.
+3. Jika Confidence 40-60% (ROADMAP): Tegaskan aset masuk "Watchlist/Roadmap" jangka panjang karena tren kuat (meskipun jarak jauh). Wajib kutip seluruh Action Plan (Pantau, TP, SL, R:R).
+4. Jika Confidence > 60% (READY): Tegaskan aset "Actionable". Wajib kutip seluruh Action Plan.
+5. Nada bahasa: Objektif, visioner, dan mekanis.
 """
 
     try:
@@ -2522,27 +2521,26 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     if execution_status == "NO TRADE":
         if potensi_rr < 1.5:
             edge_clarity = "NO SETUP (R:R Invalid)"
-            next_trade_plan = f"Abaikan aset. R:R (1:{potensi_rr:.1f}) tidak memenuhi batas institusi (Min 1:1.5)."
+            next_trade_plan = f"TAHAN EKSEKUSI. R:R (1:{potensi_rr:.1f}) tidak memenuhi batas institusi (Min 1:1.5). STRATEGI MASA DEPAN: {setup_type} jika R:R membaik."
             confidence = 0
         elif ("BUY" in setup_type and "Distribution" in obv_flow) or ("SELL" in setup_type and "Accumulation" in obv_flow):
             edge_clarity = "NO EDGE (Melawan Arus Volume)"
-            next_trade_plan = f"Abaikan setup {setup_type}. Terdeteksi anomali volume (OBV tidak searah tren)."
+            next_trade_plan = f"Abaikan eksekusi saat ini. Terdeteksi anomali volume (OBV tidak searah tren). STRATEGI MASA DEPAN: {setup_type} hanya jika OBV sinkron."
             confidence = 0
         elif jarak_entry_pct > 4.0:
-            if total_skor >= 3 or total_skor <= -3:
-                # Saham Bagus tapi Harga Jauh -> Buat Roadmap, Jangan Dibuang!
+            # ROADMAP OVERRIDE: Jangan buang jika ADX Kuat (>=25) ATAU Skor Kuat
+            if adx >= 25 or total_skor >= 3 or total_skor <= -3:
                 edge_clarity = "ROADMAP (Long-Term Watchlist)"
-                next_trade_plan = f"ROADMAP: Skor makro kuat ({total_skor}), namun harga kemahalan/terlalu jauh ({jarak_entry_pct:.1f}%). TAHAN EKSEKUSI. Tunggu harga mendekat. STRATEGI: {setup_type} | PANTAU: {plan_entry:.2f} | TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}."
-                confidence = 45 # Masuk Watchlist Range (40-60)
+                next_trade_plan = f"ROADMAP: Tren makro terkonfirmasi kuat (ADX {adx:.1f}), namun harga masih berjarak {jarak_entry_pct:.1f}%. TAHAN EKSEKUSI. Tunggu harga mendekat. STRATEGI: {setup_type} | PANTAU: {plan_entry:.2f} | TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}."
+                confidence = 45 # Masuk Watchlist Range
             else:
                 edge_clarity = "NO SETUP (Harga Jauh & Momentum Lemah)"
-                next_trade_plan = f"Abaikan sementara. Harga berjarak {jarak_entry_pct:.1f}% tanpa dukungan momentum skor yang memadai."
+                next_trade_plan = f"TAHAN EKSEKUSI. Harga berjarak {jarak_entry_pct:.1f}% dan momentum kurang memadai. STRATEGI MASA DEPAN: {setup_type} di area {plan_entry:.2f} jika tren menguat."
                 confidence = 0
         else:
             edge_clarity = "READY WATCHLIST (Timing Akurat)"
-            # Menghitung probabilitas kedekatan dan R:R
             calc_conf = 50 + int(potensi_rr * 5) - int(jarak_entry_pct * 2)
-            confidence = max(60, min(80, calc_conf)) # Range Actionable (>60)
+            confidence = max(60, min(80, calc_conf))
             next_trade_plan = f"STRATEGI: {setup_type}. PANTAU: {plan_entry:.2f} (Jarak ideal: {jarak_entry_pct:.1f}%). TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}."
 
 
