@@ -1726,15 +1726,19 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
     if confidence >= 60:
         sinyal = "READY (Waiting Trigger)"
         risk_level = "MEDIUM (Actionable Setup)"
+        copy_trade_status = "PENDING EXECUTION (Waiting Trigger)"
     elif confidence >= 40:
         sinyal = "WATCHLIST (Active Monitoring)"
         risk_level = "LOW-MEDIUM (Setup Developing)"
+        copy_trade_status = "CONDITIONAL WATCHLIST"
     elif confidence >= 30:
         sinyal = "LOW PRIO WATCHLIST (No Man's Land)"
         risk_level = "LOW (Passive Monitoring)"
+        copy_trade_status = "NO TRADE"
     else:
         sinyal = "IGNORE (No Valid Setup)"
         risk_level = "LOW (Avoid)"
+        copy_trade_status = "NO TRADE"
     # ------------------------------------
 
     # Default values
@@ -1829,6 +1833,12 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
     else:
         is_trade = "BUY" in sinyal or "SELL" in sinyal
         copy_trade_status = "OPEN" if is_trade else "NO TRADE"
+
+    # Override for confidence-based status
+    if confidence >= 60:
+        copy_trade_status = "PENDING EXECUTION (Waiting Trigger)"
+    elif confidence >= 40:
+        copy_trade_status = "CONDITIONAL WATCHLIST"
         position_size_display = f"{position_size:,.6f}"
         risk_reward_display = str(risk_metrics.get("risk_reward", 0))
         risk_pct_val = risk_metrics.get("risk_pct", 0)
@@ -2608,7 +2618,31 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
                 edge_clarity = "READY (High Probability Setup)"
                 next_trade_plan = f"STRATEGI: {setup_type}. PANTAU KETAT: {plan_entry:.2f} (Jarak ideal: {jarak_entry_pct:.1f}%). TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}. {skenario_alternatif}"
 
+    # --- GLOBAL UI SYNC UNTUK RISK MANAGEMENT & STATUS ---
+    # Pastikan ini dijalankan setelah plan_entry, plan_sl, plan_tp dihitung
+    if confidence >= 60:
+        entry = plan_entry
+        sl = plan_sl
+        tp = plan_tp
+        rr_ratio = f"1:{potensi_rr:.1f}"
+        copy_trade_status = "PENDING EXECUTION (Waiting Trigger)"
+    elif confidence >= 40:
+        entry = plan_entry
+        sl = plan_sl
+        tp = plan_tp
+        rr_ratio = f"1:{potensi_rr:.1f}"
+        copy_trade_status = "CONDITIONAL WATCHLIST"
+    else:
+        entry = 0
+        sl = 0
+        tp = 0
+        rr_ratio = "-"
+        copy_trade_status = "NO TRADE"
 
+    # CATATAN UNTUK AI IDE:
+    # Pastikan variabel entry, sl, tp, rr_ratio, dan copy_trade_status
+    # DIMASUKKAN ke dalam f-string pembentuk tabel laporan (Risk Management & Position Sizing).
+    # -----------------------------------------------------
 
     # AI Reasoning (LLM call — hanya untuk penjelasan)
     # Include additional context for better reasoning
