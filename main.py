@@ -2619,31 +2619,36 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
                 next_trade_plan = f"STRATEGI: {setup_type}. PANTAU KETAT: {plan_entry:.2f} (Jarak ideal: {jarak_entry_pct:.1f}%). TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}. {skenario_alternatif}"
 
     # --- GLOBAL UI SYNC UNTUK RISK MANAGEMENT & STATUS ---
-    # Pastikan ini dijalankan setelah plan_entry, plan_sl, plan_tp dihitung
+    # FORCE INITIALIZE (Mencegah UnboundLocalError)
+    risk_pct_display = "-"
+    ui_entry = "-"
+    ui_sl = "-"
+    ui_tp = "-"
+    ui_rr = "-"
+    ui_status = "NO TRADE"
+
     if confidence >= 60:
-        entry = plan_entry
-        sl = plan_sl
-        tp = plan_tp
-        rr_ratio = f"1:{potensi_rr:.1f}"
-        copy_trade_status = "PENDING EXECUTION (Waiting Trigger)"
+        ui_entry = f"{plan_entry:.2f}"
+        ui_sl = f"{plan_sl:.2f}"
+        ui_tp = f"{plan_tp:.2f}"
+        ui_rr = f"1:{potensi_rr:.1f}"
+        ui_status = "PENDING EXECUTION (Waiting Trigger)"
     elif confidence >= 40:
-        entry = plan_entry
-        sl = plan_sl
-        tp = plan_tp
-        rr_ratio = f"1:{potensi_rr:.1f}"
-        copy_trade_status = "CONDITIONAL WATCHLIST"
+        ui_entry = f"{plan_entry:.2f}"
+        ui_sl = f"{plan_sl:.2f}"
+        ui_tp = f"{plan_tp:.2f}"
+        ui_rr = f"1:{potensi_rr:.1f}"
+        ui_status = "CONDITIONAL WATCHLIST"
     else:
-        ui_entry = "-"
-        ui_sl = "-"
-        ui_tp = "-"
-        ui_rr = "-"
-        ui_status = "NO TRADE"
-        risk_pct_display = "-"  # <--- TAMBAHKAN BARIS INI
-        entry = 0
-        sl = 0
-        tp = 0
-        rr_ratio = "-"
-        copy_trade_status = "NO TRADE"
+        # Keep defaults
+        pass
+
+    # Convert ui_* to actual variables for format_analysis_output
+    entry = float(ui_entry) if ui_entry != "-" else 0
+    sl = float(ui_sl) if ui_sl != "-" else 0
+    tp = float(ui_tp) if ui_tp != "-" else 0
+    rr_ratio = ui_rr
+    copy_trade_status = ui_status
 
     # CATATAN UNTUK AI IDE:
     # Pastikan variabel entry, sl, tp, rr_ratio, dan copy_trade_status
