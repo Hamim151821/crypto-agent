@@ -1934,28 +1934,7 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     else:
         edge_clarity = "TIDAK ADA EDGE: Konfirmasi sinyal lemah atau Risk/Reward tidak ideal."
 
-    # === NEW FEATURE INJECTION: THE "NEXT TRADE PLAN" ENGINE ===
 
-    # Kalkulasi Eksekusi Tersimulasi
-    if "SIDEWAYS" in market_condition or "BUY" in sinyal.upper():
-        plan_entry = support if support > 0 else current_price * 0.97
-    elif "BULLISH" in trend_direction:
-        plan_entry = ma20 if ma20 > 0 else current_price * 0.98
-    else:
-        plan_entry = current_price * 0.95
-
-    plan_sl = plan_entry * 0.98
-    plan_tp = resistance if resistance > 0 else plan_entry * 1.05
-
-    # Variabel next_trade_plan
-    if "BULLISH" in trend_direction and current_price >= resistance * 0.98:
-        next_trade_plan = f"Tunggu harga koreksi (pullback) ke area {plan_entry:.2f}. Jika ada pantulan, BUY dengan SL di {plan_sl:.2f} dan TP di {plan_tp:.2f}."
-    elif "BEARISH" in trend_direction:
-        next_trade_plan = f"Trend turun dominan. Tunggu harga naik ke resistance {resistance:.2f} untuk mencari peluang REJECT/SELL, atau tunggu pola reversal solid."
-    elif "SIDEWAYS" in market_condition:
-        next_trade_plan = f"Tunggu harga menyentuh support {plan_entry:.2f}. BUY jika tidak tembus, SL ketat di {plan_sl:.2f}, TP di {plan_tp:.2f}."
-    else:
-        next_trade_plan = "Tunggu konfirmasi tren yang jelas sebelum eksekusi."
 
     # Execution Setup
     adx = indikator.get("adx", 0)
@@ -2726,6 +2705,33 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         alasan = f"HOLD karena trend bearish kuat (ADX={adx}). Harga di bawah MA50 & MA200 menunjukkan dominasi seller. Tunggu pullback ke resistance {indikator.get('resistance', 0):.2f} dengan volume tinggi untuk konfirmasi."
     elif trend_is_strong and trend_is_bullish and "bearish" in alasan.lower() and "hold" not in sinyal.lower():
         alasan = f"HOLD karena trend bullish kuat (ADX={adx}). Harga di atas MA50 & MA200 menunjukkan dominasi buyer. Tunggu pullback ke support {indikator.get('support', 0):.2f} dengan volume tinggi untuk konfirmasi."
+
+    # === NEW FEATURE INJECTION: THE "NEXT TRADE PLAN" ENGINE ===
+
+    # Kalkulasi Eksekusi Tersimulasi
+    current_price = indikator.get("current_price", 0)
+    ma20 = indikator.get("ma20", 0)
+    support = indikator.get("support", 0)
+    resistance = indikator.get("resistance", 0)
+    if "SIDEWAYS" in market_condition or "BUY" in sinyal.upper():
+        plan_entry = support if support > 0 else current_price * 0.97
+    elif "BULLISH" in trend_direction:
+        plan_entry = ma20 if ma20 > 0 else current_price * 0.98
+    else:
+        plan_entry = current_price * 0.95
+
+    plan_sl = plan_entry * 0.98
+    plan_tp = resistance if resistance > 0 else plan_entry * 1.05
+
+    # Variabel next_trade_plan
+    if "BULLISH" in trend_direction and current_price >= resistance * 0.98:
+        next_trade_plan = f"Tunggu harga koreksi (pullback) ke area {plan_entry:.2f}. Jika ada pantulan, BUY dengan SL di {plan_sl:.2f} dan TP di {plan_tp:.2f}."
+    elif "BEARISH" in trend_direction:
+        next_trade_plan = f"Trend turun dominan. Tunggu harga naik ke resistance {resistance:.2f} untuk mencari peluang REJECT/SELL, atau tunggu pola reversal solid."
+    elif "SIDEWAYS" in market_condition:
+        next_trade_plan = f"Tunggu harga menyentuh support {plan_entry:.2f}. BUY jika tidak tembus, SL ketat di {plan_sl:.2f}, TP di {plan_tp:.2f}."
+    else:
+        next_trade_plan = "Tunggu konfirmasi tren yang jelas sebelum eksekusi."
 
     # === URGENT ARCHITECTURE FIX: DECOUPLING MARKET VS ENTRY QUALITY ===
 
