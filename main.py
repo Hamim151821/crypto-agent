@@ -1623,23 +1623,26 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
         rsi_context = "Oversold di Downtrend = Momentum ideal untuk menunggu pullback dan SELL ON RALLY."
     elif "UP" in market_condition and ("OVERBOUGHT" in str(stoch) or rsi >= 70):
         rsi_context = "Overbought di Uptrend = Harga rawan koreksi. Momentum ideal untuk menunggu BUY ON DIP."
+    elif "DOWN" in market_condition and ("OVERBOUGHT" in str(stoch) or rsi >= 70):
+        rsi_context = "Overbought di Downtrend = Peluang probabilitas tinggi untuk SELL ON RALLY di area resistance."
+    elif "UP" in market_condition and ("OVERSOLD" in str(stoch) or rsi <= 30):
+        rsi_context = "Oversold di Uptrend = Peluang probabilitas tinggi untuk BUY ON DIP di area support."
 
     prompt = f"""Sebagai AI Quant Trader, buat laporan eksekusi MAKSIMAL 3 KALIMAT untuk {symbol}.
 
 [DATA KUANTITATIF]
 Arah Makro: {market_condition} | Skor Total: {total_skor}
 Status: {edge_clarity} | System Confidence: {confidence}%
-Konteks Tambahan: {rsi_context}
+Konteks Logika: {rsi_context}
 
 [ACTION PLAN]
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN:
-1. DILARANG KERAS menggunakan kalimat "tidak ada rencana", "diabaikan total", atau sejenisnya. Trader profesional selalu memiliki "Future Edge" (Rencana Masa Depan).
-2. Jika Confidence < 40% (NO SETUP/NO EDGE): Jelaskan alasan penahanan eksekusi, TETAPI WAJIB sebutkan "STRATEGI MASA DEPAN" yang ada di Action Plan.
-3. Jika Confidence 40-60% (ROADMAP): Tegaskan aset masuk "Watchlist/Roadmap" jangka panjang karena tren kuat (meskipun jarak jauh). Wajib kutip seluruh Action Plan (Pantau, TP, SL, R:R).
-4. Jika Confidence > 60% (READY): Tegaskan aset "Actionable". Wajib kutip seluruh Action Plan.
-5. Nada bahasa: Objektif, visioner, dan mekanis.
+1. JIKA Confidence > 60% (HIGH PROB WATCHLIST): DILARANG KERAS mengatakan "Siap Eksekusi" atau "Ready". Tegaskan bahwa sistem sedang "MEMANTAU KETAT" area probabilitas tinggi menunggu Trigger muncul.
+2. JELASKAN PARADOKS: Jika Skor Total jelek/negatif namun Confidence tinggi, gunakan Konteks Logika di atas untuk menjelaskan bahwa kombinasi tren dan momentum saat ini menciptakan probabilitas tinggi untuk strategi tersebut.
+3. JIKA Status ROADMAP atau HIGH PROB WATCHLIST: Wajib kutip seluruh Action Plan secara akurat (Pantau, Trigger, TP, SL, R:R).
+4. Nada bahasa: Objektif, tidak terburu-buru, dan sangat disiplin (Hedge Fund level).
 """
 
     try:
@@ -2538,10 +2541,10 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
                 next_trade_plan = f"TAHAN EKSEKUSI. Harga berjarak {jarak_entry_pct:.1f}% dan momentum kurang memadai. STRATEGI MASA DEPAN: {setup_type} di area {plan_entry:.2f} jika tren menguat."
                 confidence = 0
         else:
-            edge_clarity = "READY WATCHLIST (Timing Akurat)"
+            edge_clarity = "HIGH PROB WATCHLIST (Menunggu Trigger)"
             calc_conf = 50 + int(potensi_rr * 5) - int(jarak_entry_pct * 2)
-            confidence = max(60, min(80, calc_conf))
-            next_trade_plan = f"STRATEGI: {setup_type}. PANTAU: {plan_entry:.2f} (Jarak ideal: {jarak_entry_pct:.1f}%). TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}."
+            confidence = max(60, min(80, calc_conf)) # Range Actionable (>60)
+            next_trade_plan = f"STRATEGI: {setup_type}. PANTAU: {plan_entry:.2f} (Jarak: {jarak_entry_pct:.1f}%). TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}."
 
 
 
