@@ -1931,6 +1931,14 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     else:
         execution_setup = "HOLD. Tunggu konfirmasi tren."
 
+    # Safe assignment untuk rr_display
+    safe_rr = locals().get('risk_reward_ratio', 0)
+
+    if execution_status == "NO TRADE" or safe_rr < 0.1:
+        rr_display = "N/A (Tidak ada setup valid)"
+    else:
+        rr_display = f"1 : {safe_rr:.1f}"
+
     prompt = f"""Sebagai Algoritma Eksekusi Institusional, hasilkan laporan operasional maksimal 4 kalimat.
 
 DATA:
