@@ -2224,17 +2224,14 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
 
     # Determine trend_direction for contextual scoring
     current_price = indikator.get("current_price", 0)
+    ma20 = indikator.get("ma20", 0)
     ma50 = indikator.get("ma50", 0)
-    ma200 = indikator.get("ma200", 0)
-    trend_direction = "NETRAL"
-    if current_price > ma50 and ma50 > ma200:
-        trend_direction = "BULLISH (dominan)"
-    elif current_price < ma50 and ma50 < ma200:
-        trend_direction = "BEARISH (dominan)"
-    elif ma50 > ma200:
-        trend_direction = "BULLISH (terbalik)"
-    elif ma50 < ma200:
-        trend_direction = "BEARISH (terbalik)"
+    if current_price > ma20 and current_price > ma50:
+        trend_direction = "BULLISH (Short-Medium)"
+    elif current_price < ma20 and current_price < ma50:
+        trend_direction = "BEARISH (Short-Medium)"
+    else:
+        trend_direction = "SIDEWAYS / TRANSISI"
 
     # 4. Analisis Berita
     sentimen = analyze_news(berita, symbol)
@@ -2365,62 +2362,44 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     # Cek konflik untuk confidence scoring (sudah dihitung di sinyal logic)
     # has_conflict sudah ada dari sinyal logic
     
-# 7. CONFIDENCE SCORE (LOGIS)
-    abs_skor = abs(total_skor)
-    adx = indikator.get("adx", 0)
-    
-    # Cek apakah semua indikator searah (strong signal)
-    is_strong_signal = abs_skor >= 4 and not has_conflict and not vol_rendah
-    
-    # Deteksi apakah ini early entry atau confirmed
-    is_confirmed = "CONFIRMED" in sinyal
-    
-    # Trend kuat + ADX > 30 + semua indikator searah → ≥60%
-    is_trend_kuat = adx > 30
-    all_indicators_aligned = (
-        not has_conflict and 
-        not vol_rendah and
-        (("BULLISH" in trend_status and "BULLISH" in macd_status) or 
-         ("BEARISH" in trend_status and "BEARISH" in macd_status))
-    )
-    
-    if is_trend_kuat and all_indicators_aligned:
-        # Trend kuat + ADX > 30 + semua indikator searah → 60-85%
-        confidence = 60 + min((abs_skor - 4) * 2, 25)
-    elif is_confirmed:
-        # Confirmed signal → 70-85%
-        confidence = 70 + min((abs_skor - 4) * 2, 15)
-    elif is_strong_signal:
-        confidence = 50 + min((abs_skor - 4) * 2, 10)  # 50-60%
-    elif abs_skor >= 1:
-        if has_conflict or vol_rendah:
-            confidence = 35 + (abs_skor * 2)  # Weak signal / conflict → max 45%
-        else:
-            confidence = 45 + (abs_skor * 2)  # 45-55%
-    else:  # Netral / HOLD
+# 7. CONFIDENCE SCORE (DYNAMIC)
+    # Determine if trend_direction aligned with signal
+    trend_bullish = "BULLISH" in trend_direction
+    trend_bearish = "BEARISH" in trend_direction
+    signal_buy = "BUY" in sinyal.upper()
+    signal_sell = "SELL" in sinyal.upper()
+    signal_hold = "HOLD" in sinyal.upper()
+
+    aligned = False
+    if trend_bullish and (signal_buy or signal_hold):
+        aligned = True
+    elif trend_bearish and (signal_sell or signal_hold):
+        aligned = True
+
+    # Strategy regime
+    strategy_regime = "RANGE TRADING" if "SIDEWAYS" in market_condition else "TREND TRADING"
+
+    # Check for conflicts (MACD vs OBV, or Signal vs Trend)
+    macd_status = indikator.get("macd_status", "")
+    obv_divergence = indikator.get("obv_divergence", "")
+    macd_bullish = "BULLISH" in macd_status
+    macd_bearish = "BEARISH" in macd_status
+    obv_bullish = "BULLISH" in obv_divergence
+    obv_bearish = "BEARISH" in obv_divergence
+
+    macd_obv_conflict = (macd_bullish and obv_bearish) or (macd_bearish and obv_bullish)
+    signal_trend_conflict = not aligned and (signal_buy or signal_sell)
+
+    many_conflicts = macd_obv_conflict or signal_trend_conflict
+
+    if aligned:
+        confidence = 70
+    elif strategy_regime == "RANGE TRADING" and not many_conflicts:
+        confidence = 60
+    elif many_conflicts:
         confidence = 35
-    
-    # HOLD → maksimal 40%
-    if "HOLD" in sinyal.upper():
-        confidence = min(confidence, 40)
-    
-    # Jika ada konflik → max 45%
-    if has_conflict:
-        confidence = min(confidence, 45)
-    
-    # Volume rendah → -10%
-    if vol_rendah:
-        confidence = max(30, confidence - 10)
-    
-    # Tidak ada berita → -5%
-    if not has_news:
-        confidence = max(30, confidence - 5)
-    
-    # DILARANG confidence > 85% atau < 30%
-    if confidence < 30:
-        confidence = 30
-    if confidence > 85:
-        confidence = 85
+    else:
+        confidence = 50
     
     # 8. No-Trade Zone Check
     no_trade = detect_no_trade_zone(indikator, skor_detail)
@@ -2484,25 +2463,22 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     current_price = indikator.get("current_price", 0)
     resistance = indikator.get("resistance", 0)
     support = indikator.get("support", 0)
+    ma20 = indikator.get("ma20", 0)
     vol_status = indikator.get("volume_status", "NORMAL")
-    obv_divergence = indikator.get("obv_divergence", "")
-    is_bearish_trend = market_condition.startswith("TRENDING DOWN")
+    adx = indikator.get("adx", 0)
     is_bullish_trend = market_condition.startswith("TRENDING UP")
-    is_buy_signal = "BUY" in sinyal.upper()
-    is_sell_signal = "SELL" in sinyal.upper()
+    is_sideways = "SIDEWAYS" in market_condition
 
-    # HIGH RISK: Near resistance with weak volume and bearish OBV
+    # HIGH RISK: Volume tinggi or harga <2% dari Resistance
     near_resistance = resistance > 0 and abs(current_price - resistance) / resistance <= 0.02
-    weak_volume = vol_status == "RENDAH"
-    bearish_obv = "BEARISH" in obv_divergence
-    if near_resistance and weak_volume and bearish_obv:
-        risk_level = "HIGH"  # Bahaya Pucuk
-    # HIGH RISK: Counter-trend signals
-    elif (is_buy_signal and is_bearish_trend) or (is_sell_signal and is_bullish_trend):
-        risk_level = "HIGH"  # Counter-Trend
-    # LOW RISK: Near support with bullish trend
-    elif support > 0 and abs(current_price - support) / support <= 0.02 and is_bullish_trend:
-        risk_level = "LOW"  # Optimal Entry
+    if vol_status == "TINGGI" or near_resistance:
+        risk_level = "HIGH"
+    # MEDIUM RISK: Trend kuat (ADX > 25) or Sideways normal
+    elif adx > 25 or is_sideways:
+        risk_level = "MEDIUM"
+    # LOW RISK: Setup Pullback Sempurna (Harga dekat MA20/Support di Uptrend)
+    elif is_bullish_trend and (support > 0 and abs(current_price - support) / support <= 0.02 or ma20 > 0 and abs(current_price - ma20) / ma20 <= 0.02):
+        risk_level = "LOW"
     else:
         risk_level = "MEDIUM"  # Default
     
