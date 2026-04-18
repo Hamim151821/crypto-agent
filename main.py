@@ -1637,11 +1637,11 @@ Jembatan Logika: {mean_reversion_context}
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN:
-1. JIKA Jembatan Logika "PARADOKS" tersedia, WAJIB gunakan kalimat tersebut di awal penjelasan untuk menjembatani mengapa skor dan strategi berlawanan arah.
-2. JIKA Status "READY (High Probability Setup)", tegaskan bahwa sistem siap eksekusi (Tinggal menunggu Trigger).
-3. JIKA Action Plan memiliki "ALT Skenario", wajib sebutkan strategi utama DAN strategi alternatif secara ringkas.
-4. WAJIB mengutip format Action Plan secara akurat (Area Pantau, TP, SL, R:R).
-5. Nada: Sangat teknis, tidak emosional, layaknya Chief Risk Officer Hedge Fund.
+1. JIKA Jembatan Logika "PARADOKS" tersedia, WAJIB gunakan kalimat tersebut di awal penjelasan.
+2. JIKA Status "READY", tegaskan bahwa sistem siap eksekusi dan memantau ketat area pantau.
+3. JIKA Status "NO ENTRY YET" atau "NO EDGE" (Confidence 0%): MAKSIMAL 2 KALIMAT. Jelaskan bahwa proyeksi R:R atau jarak harga telah dihitung, namun ditolak oleh sistem pengaman. WAJIB sebutkan Bias Arah (contoh: "Bias arah valid untuk Sell On Rally, namun...") agar tetap selaras dengan kekuatan tren (ADX).
+4. JIKA Status "ROADMAP" atau "READY": Wajib kutip format Action Plan secara akurat (Area Pantau, Trigger, TP, SL, R:R).
+5. Nada: Sangat teknis, analitis, dan tidak emosional.
 """
 
     try:
@@ -2526,8 +2526,8 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     # 3. Decision Driver & Confidence Matrix (The Master Core)
     if execution_status == "NO TRADE":
         if potensi_rr < 1.5:
-            edge_clarity = "NO SETUP (R:R Invalid)"
-            next_trade_plan = f"TAHAN EKSEKUSI. R:R (1:{potensi_rr:.1f}) tidak memenuhi batas institusi (Min 1:1.5). STRATEGI MASA DEPAN: {setup_type} jika R:R membaik."
+            edge_clarity = "NO ENTRY YET (Proyeksi R:R Buruk)"
+            next_trade_plan = f"TAHAN EKSEKUSI. Bias arah valid untuk {setup_type}, namun proyeksi matematis R:R saat ini (1:{potensi_rr:.1f}) di bawah standar institusi (Min 1:1.5). Menunggu harga terkoreksi ke area yang memberikan rasio risiko lebih aman."
             confidence = 0
         elif ("BUY" in setup_type and "Distribution" in obv_flow) or ("SELL" in setup_type and "Accumulation" in obv_flow):
             edge_clarity = "NO EDGE (Melawan Arus Volume)"
