@@ -1612,25 +1612,24 @@ def calculate_data_quality(indikator, berita):
     }
 
 # ==============================
-# AI REASONING (LLM untuk alasan saja)
+# AI REASONING (LLM untuk narasi final)
 # ==============================
 def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, confidence, rr_ratio, risk_level, execution_status, edge_clarity, next_trade_plan):
-    prompt = f"""Sebagai Algoritma Eksekusi Institusional, hasilkan laporan operasional maksimal 4 kalimat untuk aset {symbol}.
+    prompt = f"""Sebagai Algoritma Eksekusi Kuantitatif, hasilkan laporan singkat (3-4 kalimat) untuk aset {symbol}.
 
-DATA MARKET SAAT INI:
-Kondisi: {market_condition} | Skor: {total_skor}
-R:R Saat Ini: {rr_ratio} | Status: {execution_status}
-Edge: {edge_clarity}
-Confidence: {confidence}% (Tingkat keyakinan untuk ENTRY SEKARANG, bukan keyakinan pada tren)
+[DATA FAKTUAL]
+Kondisi: {market_condition} | Skor Total: {total_skor}
+Status Eksekusi: {execution_status} | Edge: {edge_clarity}
+Keyakinan Eksekusi Saat Ini: {confidence}%
 
-CONDITIONAL PLAN:
+[ACTION PLAN]
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN:
-1. WAJIB mengutip CONDITIONAL PLAN (Strategi, Area Pantau, Trigger, Target, SL, Batal).
-2. DILARANG menghitung ulang/membuat asumsi tren sendiri. Jika Kondisi bilang TRENDING DOWN, tulis Trending Down.
-3. Jelaskan bahwa Confidence yang rendah mencerminkan posisi harga saat ini yang belum menyentuh area pantau/Dynamic Support Resistance.
-4. Gunakan bahasa kuantitatif yang objektif dan tidak bias.
+1. DILARANG MERUBAH DATA. Jika Edge mengatakan "WATCHLIST", gunakan kata Watchlist. Jika "NO EDGE", tegaskan abaikan.
+2. Pisahkan narasi antara "Keputusan Saat Ini" dan "Action Plan" secara tegas.
+3. Jika Confidence 0%, jelaskan secara kuantitatif bahwa eksekusi ditahan karena harga belum menyentuh area probabilitas tinggi atau R:R tidak memenuhi standar.
+4. Bahasa harus sangat dingin, mekanis, dan institusional.
 """
 
     try:
@@ -1640,10 +1639,10 @@ ATURAN MUTLAK PENULISAN:
             messages=[{"role": "user", "content": prompt}]
         )
         result = response.choices[0].message.content
-        return result.strip() if result else "Menunggu konfirmasi pergerakan harga lebih lanjut."
+        return result.strip() if result else "Sistem dalam mode standby. Menunggu konfirmasi data."
     except Exception as e:
         print(f"⚠️ LLM Error: {e}")
-        return "Menunggu konfirmasi pergerakan harga lebih lanjut."
+        return "Sistem dalam mode standby. Menunggu konfirmasi data."
     
     try:
         response = client.chat.completions.create(
@@ -2437,7 +2436,7 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     else:
         execution_status = "HOLD"
 
-    # === THE "NEXT TRADE PLAN" ENGINE (STRICT INSTITUTIONAL LOGIC) ===
+    # === THE "NEXT TRADE PLAN" ENGINE (10-POINT INSTITUTIONAL LOGIC) ===
     adx = indikator.get("adx", 0)
     support = indikator.get("support", 0)
     resistance = indikator.get("resistance", 0)
@@ -2445,50 +2444,69 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     ma20 = indikator.get("ma20", 0)
     ma50 = indikator.get("ma50", 0)
     vwap = indikator.get("vwap", 0)
+    obv_flow = indikator.get("obv_flow", "NONE")
 
     is_bearish_macro = "TRENDING DOWN" in market_condition or (ma50 > 0 and current_price < ma50)
     is_bullish_macro = "TRENDING UP" in market_condition or (ma50 > 0 and current_price > ma50)
 
-    # 1. Skenario Trend & Dynamic Zone
-    if is_bearish_macro and adx >= 20:
-        setup_type = "SELL ON RALLY (Follow Trend)"
-        dynamic_res = ma20 if ma20 > current_price else vwap
-        plan_entry = dynamic_res if dynamic_res > 0 else resistance
-        plan_sl = plan_entry * 1.03
-        plan_tp = support
-        trigger = "Candle Bearish (Pin Bar/Engulfing) reject MA20/VWAP + Volume Merah > 1.2x"
-        invalidasi = f"Close kuat di atas {plan_sl:.2f}"
-        area_pantau = f"{plan_entry:.2f} - {resistance:.2f}"
-    elif is_bullish_macro and adx >= 20:
-        setup_type = "BUY ON DIP (Follow Trend)"
-        dynamic_sup = ma20 if ma20 < current_price else vwap
-        plan_entry = dynamic_sup if dynamic_sup > 0 else support
-        plan_sl = plan_entry * 0.97
-        plan_tp = resistance
-        trigger = "Candle Bullish (Pin Bar/Engulfing) mantul MA20/VWAP + Volume Hijau > 1.2x"
-        invalidasi = f"Close kuat di bawah {plan_sl:.2f}"
-        area_pantau = f"{support:.2f} - {plan_entry:.2f}"
-    else:
-        setup_type = "RANGE TRADING (Sideways)"
-        plan_entry = support
-        plan_sl = support * 0.97
-        plan_tp = resistance
-        trigger = "Rejection valid di Support + Volume Hijau > 1.2x"
-        invalidasi = f"Tembus & close di bawah {plan_sl:.2f}"
-        area_pantau = f"{support:.2f}"
+    setup_type = ""
+    plan_entry = 0
+    plan_sl = 0
+    plan_tp = 0
+    trigger = ""
 
-    # 2. Rumuskan Conditional Plan
-    if plan_entry > 0 and plan_sl > 0:
-        next_trade_plan = f"STRATEGI: {setup_type}. Area Pantau: {area_pantau}. TRIGGER: {trigger}. TARGET: {plan_tp:.2f} | SL: {plan_sl:.2f}. Batal jika: {invalidasi}."
+    # 1. Regime Detection & Strategy Alignment
+    if adx >= 25:
+        if is_bearish_macro:
+            setup_type = "SELL ON RALLY (Trend Following)"
+            dynamic_res = ma20 if ma20 > current_price else vwap
+            plan_entry = dynamic_res if dynamic_res > 0 else resistance
+            plan_sl = plan_entry * 1.03
+            plan_tp = support
+            trigger = "Bearish Engulfing/Pin Bar reject MA20/VWAP"
+        elif is_bullish_macro:
+            setup_type = "BUY ON DIP (Trend Following)"
+            dynamic_sup = ma20 if ma20 < current_price else vwap
+            plan_entry = dynamic_sup if dynamic_sup > 0 else support
+            plan_sl = plan_entry * 0.97
+            plan_tp = resistance
+            trigger = "Bullish Engulfing/Pin Bar mantul MA20/VWAP"
     else:
-        next_trade_plan = "Menunggu konfirmasi struktur harga yang lebih jelas."
-
-    # 3. Perbaiki narasi Edge Clarity
-    if execution_status == "NO TRADE":
-        if adx >= 20:
-            edge_clarity = "MENUNGGU PULLBACK (Tren terkonfirmasi, namun butuh koreksi ke area MA20/VWAP)."
+        # Sideways Regime
+        setup_type = "RANGE TRADING"
+        # Cari area terdekat
+        if abs(current_price - support) < abs(current_price - resistance):
+            plan_entry = support
+            plan_sl = support * 0.97
+            plan_tp = resistance
+            trigger = "Rejection di Support + Volume Hijau di atas rata-rata"
         else:
-            edge_clarity = "TIDAK ADA EDGE (Market Choppy/Sideways, momentum lemah)."
+            plan_entry = resistance
+            plan_sl = resistance * 1.03
+            plan_tp = support
+            trigger = "Rejection di Resistance + Volume Merah di atas rata-rata"
+
+    # 2. R:R Calculation for Conditional Plan
+    potensi_rr = 0
+    if plan_entry > 0 and plan_sl > 0 and plan_entry != plan_sl:
+        risk = abs(plan_entry - plan_sl)
+        reward = abs(plan_tp - plan_entry)
+        potensi_rr = reward / risk if risk > 0 else 0
+
+    # 3. Finalization: Edge Clarity & Confidence Override
+    if execution_status == "NO TRADE":
+        confidence = 0  # Mutlak 0% jika tidak ada eksekusi sekarang
+
+        # Filter tambahan: Jangan buy on dip jika OBV distribusi kuat
+        if "BUY" in setup_type and "Distribution" in obv_flow:
+            edge_clarity = "NO EDGE (Setup Buy dibatalkan karena OBV menunjukkan Distribusi Kuat)"
+            next_trade_plan = "Abaikan aset ini. Terdapat tekanan jual institusi (OBV Divergence)."
+        elif potensi_rr >= 1.5:
+            edge_clarity = "WATCHLIST (Menunggu Setup Valid di Area Pantau)"
+            next_trade_plan = f"STRATEGI: {setup_type}. Pemanatauan: {plan_entry:.2f}. TRIGGER: {trigger}. TARGET: {plan_tp:.2f} | SL: {plan_sl:.2f} (Est. R:R 1:{potensi_rr:.1f})."
+        else:
+            edge_clarity = "NO EDGE (R:R Est. < 1:1.5 - Probabilitas Terlalu Rendah)"
+            next_trade_plan = f"Abaikan aset ini. Ruang profit ({plan_tp:.2f}) terlalu sempit dibandingkan risiko ({plan_sl:.2f})."
 
 
 
