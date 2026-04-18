@@ -1633,16 +1633,16 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
 [DATA KUANTITATIF]
 Arah Makro: {market_condition} | Skor Total: {total_skor}
 Status: {edge_clarity} | System Confidence: {confidence}%
-Konteks Logika: {rsi_context}
+Konteks: {rsi_context}
 
 [ACTION PLAN]
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN:
-1. JIKA Confidence > 60% (HIGH PROB WATCHLIST): DILARANG KERAS mengatakan "Siap Eksekusi" atau "Ready". Tegaskan bahwa sistem sedang "MEMANTAU KETAT" area probabilitas tinggi menunggu Trigger muncul.
-2. JELASKAN PARADOKS: Jika Skor Total jelek/negatif namun Confidence tinggi, gunakan Konteks Logika di atas untuk menjelaskan bahwa kombinasi tren dan momentum saat ini menciptakan probabilitas tinggi untuk strategi tersebut.
-3. JIKA Status ROADMAP atau HIGH PROB WATCHLIST: Wajib kutip seluruh Action Plan secara akurat (Pantau, Trigger, TP, SL, R:R).
-4. Nada bahasa: Objektif, tidak terburu-buru, dan sangat disiplin (Hedge Fund level).
+1. Jika Status "NEUTRAL WATCH": Tegaskan bahwa market sedang Sideways dan harga berada mengambang di tengah range (No Man's Land). Pendekatan kita adalah murni REAKTIF, menunggu harga menyentuh batas Support/Resistance ekstrem.
+2. JIKA Confidence < 40% (NO SETUP/EDGE): Jelaskan bahwa aset ini diabaikan karena tidak memenuhi syarat keamanan. Wajib kutip Strategi Masa Depan dari Action Plan.
+3. JIKA Status "ROADMAP" (40-60%) atau "HIGH PROB WATCHLIST" (>60%): Wajib kutip seluruh Action Plan secara lengkap (Pantau, Trigger, TP, SL, R:R).
+4. Bahasa harus sekelas Fund Manager: Objektif, tidak menebak arah pada saat sideways, dan sangat disiplin.
 """
 
     try:
@@ -2488,28 +2488,25 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
             trigger = "Bullish Engulfing/Pin Bar + Vol > MA20"
             invalidasi = f"Close di bawah {plan_sl:.2f}"
     else:
-        # Sideways dengan Bias Terarah
-        if is_bullish_macro:
-            setup_type = "RANGE BUY (Bullish Bias)"
+        # REACTIVE RANGE TRADING (Sideways/Choppy)
+        # Bot akan bereaksi berdasarkan batas mana yang lebih dekat dengan harga saat ini
+        jarak_ke_support = abs(current_price - support)
+        jarak_ke_res = abs(resistance - current_price)
+
+        if jarak_ke_support <= jarak_ke_res:
+            setup_type = "REACTIVE RANGE BUY (Support Bounce)"
             plan_entry = support
             plan_sl = support * 0.97
             plan_tp = resistance
-            trigger = "Bullish Rejection Valid + Vol > MA20"
-            invalidasi = f"Close di bawah {plan_sl:.2f}"
-        elif is_bearish_macro:
-            setup_type = "RANGE SELL (Bearish Bias)"
+            trigger = "Bullish Rejection Valid di Support + Vol > MA20"
+            invalidasi = f"Close kuat di bawah {plan_sl:.2f}"
+        else:
+            setup_type = "REACTIVE RANGE SELL (Resistance Rejection)"
             plan_entry = resistance
             plan_sl = resistance * 1.03
             plan_tp = support
-            trigger = "Bearish Rejection Valid + Vol > MA20"
-            invalidasi = f"Close di atas {plan_sl:.2f}"
-        else:
-            setup_type = "RANGE TRADING"
-            plan_entry = support
-            plan_sl = support * 0.97
-            plan_tp = resistance
-            trigger = "Pantulan S/R + Vol > MA20"
-            invalidasi = f"Tembus S/R (SL: {plan_sl:.2f})"
+            trigger = "Bearish Rejection Valid di Resistance + Vol > MA20"
+            invalidasi = f"Close kuat di atas {plan_sl:.2f}"
 
     # 2. Probability & R:R Calculation
     potensi_rr = 0
@@ -2537,8 +2534,9 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
                 next_trade_plan = f"ROADMAP: Tren makro terkonfirmasi kuat (ADX {adx:.1f}), namun harga masih berjarak {jarak_entry_pct:.1f}%. TAHAN EKSEKUSI. Tunggu harga mendekat. STRATEGI: {setup_type} | PANTAU: {plan_entry:.2f} | TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}."
                 confidence = 45 # Masuk Watchlist Range
             else:
-                edge_clarity = "NO SETUP (Harga Jauh & Momentum Lemah)"
-                next_trade_plan = f"TAHAN EKSEKUSI. Harga berjarak {jarak_entry_pct:.1f}% dan momentum kurang memadai. STRATEGI MASA DEPAN: {setup_type} di area {plan_entry:.2f} jika tren menguat."
+                # Khusus Sideways / Tren Lemah yang harganya di tengah-tengah
+                edge_clarity = "NEUTRAL WATCH (Harga di Tengah Range)"
+                next_trade_plan = f"TAHAN EKSEKUSI. Market Sideways/Choppy. Harga berada di 'No Man's Land' (Tengah range, berjarak {jarak_entry_pct:.1f}% dari batas terdekat). STRATEGI REAKTIF MASA DEPAN: {setup_type} HANYA JIKA harga menyentuh ekstrim {plan_entry:.2f}."
                 confidence = 0
         else:
             edge_clarity = "HIGH PROB WATCHLIST (Menunggu Trigger)"
