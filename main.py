@@ -1619,7 +1619,6 @@ def calculate_data_quality(indikator, berita):
 # AI REASONING (LLM untuk narasi final)
 # ==============================
 def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, confidence, rr_ratio, risk_level, execution_status, edge_clarity, next_trade_plan):
-    # 1. Anti-Crash Data Type Casting
     try:
         rsi = float(indikator.get("rsi", 50))
         adx = float(indikator.get("adx", 0))
@@ -1629,30 +1628,35 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     except Exception:
         rsi, adx, stoch_str, vol_str, obv_str = 50, 0, "", "", ""
 
-    # 2. Kategori ADX Institusional (Kalibrasi Baru)
     adx_desc = "Sangat Kuat" if adx >= 40 else ("Kuat" if adx >= 25 else ("Moderate/Mulai Terbentuk" if adx >= 20 else "Lemah/Choppy"))
 
-    # 3. DETEKTOR KONDISI HARGA & PARADOKS
     kondisi_harga = ""
-    if adx < 20: # Rezim Sideways
+    if adx < 20: 
         if total_skor >= 5 and "SELL" in next_trade_plan:
-            kondisi_harga = f"PARADOKS: Meskipun Skor Makro sangat Bullish (+{total_skor}), market sedang Sideways dan harga mepet Resistance. Strategi dikalibrasi menjadi Counter-Trend Short (Range Sell) untuk mengeksploitasi potensi rejection."
+            kondisi_harga = f"PARADOKS: Skor Makro Bullish (+{total_skor}), namun market Sideways dan harga di Resistance. Strategi dikalibrasi ke Counter-Trend Short (Range Sell)."
         elif total_skor <= -5 and "BUY" in next_trade_plan:
-            kondisi_harga = f"PARADOKS: Meskipun Skor Makro sangat Bearish ({total_skor}), market sedang Sideways dan harga mepet Support. Strategi dikalibrasi menjadi Counter-Trend Long (Range Buy) untuk mengeksploitasi potensi bounce."
+            kondisi_harga = f"PARADOKS: Skor Makro Bearish ({total_skor}), namun market Sideways dan harga di Support. Strategi dikalibrasi ke Counter-Trend Long (Range Buy)."
         elif "DOWN" in market_condition and "DISTRIBUTION" in obv_str:
-            kondisi_harga = "Market Sideways namun berada dalam tekanan Bearish kuat (OBV Distribusi). Peluang terbaik adalah SELL di resistance."
+            kondisi_harga = "Market Sideways dengan tekanan Bearish dominan (OBV Distribusi). Peluang terbaik adalah SELL di resistance."
         elif "UP" in market_condition and "ACCUMULATION" in obv_str:
-            kondisi_harga = "Market Sideways namun disokong tekanan Bullish (OBV Akumulasi). Peluang terbaik adalah BUY di support."
-    else: # Rezim Trending
-        if "DOWN" in market_condition and (rsi >= 70 or "OVERBOUGHT" in stoch_str):
-            kondisi_harga = "Harga mengalami Counter-Trend Rally hingga Overbought. Ini memperkuat probabilitas setup SELL ON RALLY di resistance."
-        elif "UP" in market_condition and (rsi <= 30 or "OVERSOLD" in stoch_str):
-            kondisi_harga = "Harga terkoreksi hingga Oversold. Ini memperkuat probabilitas setup BUY ON DIP di support."
-
-    # 4. Integrasi Volume
-    vol_context = "Volume transaksi yang sepi (di bawah normal) menandakan market belum siap bergerak agresif." if "RENDAH" in vol_str or "NORMAL" in vol_str and adx < 20 else ""
-
-    prompt = f"""Sebagai AI Quant Trader tingkat lanjut, buat laporan eksekusi (MAKSIMAL 4 KALIMAT) untuk {symbol}.
+            kondisi_harga = "Market Sideways dengan sokongan Bullish (OBV Akumulasi). Peluang terbaik adalah BUY di support."
+    else: 
+        if "DOWN" in market_condition:
+            if rsi >= 70 or "OVERBOUGHT" in stoch_str:
+                kondisi_harga = "Harga mengalami Counter-Trend Rally (Overbought). Ini memperkuat probabilitas setup SELL ON RALLY di resistance."
+            elif total_skor > -3:
+                # Logika Pullback Klasik
+                kondisi_harga = "Tren utama Bearish, namun momentum jangka pendek sedang naik. Ini adalah fase PULLBACK (Counter-Trend Rally), momentum ideal untuk mencari pijakan SELL ON RALLY di area resistance."
+        elif "UP" in market_condition:
+            if rsi <= 30 or "OVERSOLD" in stoch_str:
+                kondisi_harga = "Harga terkoreksi (Oversold). Ini memperkuat probabilitas setup BUY ON DIP di support."
+            elif total_skor < 3:
+                # Logika Koreksi Klasik
+                kondisi_harga = "Tren utama Bullish, namun momentum jangka pendek melemah. Ini adalah fase KOREKSI, momentum ideal untuk mencari pijakan BUY ON DIP di area support."
+            
+    vol_context = "Volume transaksi yang sepi menandakan market belum siap breakout." if "RENDAH" in vol_str or ("NORMAL" in vol_str and adx < 20) else ""
+        
+    prompt = f"""Sebagai AI Quant Trader tingkat lanjut, buat laporan eksekusi untuk {symbol}.
 
 [DATA KUANTITATIF]
 Tren Makro: {market_condition} | Kekuatan Tren: {adx_desc} (ADX: {adx:.1f})
@@ -1663,59 +1667,27 @@ Status Sistem: {edge_clarity} | System Confidence: {confidence}%
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
-1. DILARANG KERAS menggunakan kata pengantar seperti "Berikut adalah laporan...", "Sistem kami...", atau "Saat ini...". KALIMAT PERTAMA WAJIB langsung mengutip isi dari 'Analisis Mendalam' atau status Tren!
-2. JIKA ada kata "PARADOKS" di Analisis Mendalam, WAJIB jadikan itu sebagai fokus utama penjelasan agar kontradiksi skor dan strategi terjawab secara logis.
-3. JIKA Status "NO ENTRY YET" atau "NO EDGE": Anda WAJIB mengutip "STRATEGI MASA DEPAN" dari Action Plan secara eksplisit beserta Area Pantau dan Trigger-nya, agar trader tahu apa yang sedang ditunggu.
-4. JIKA Confidence > 60% (READY), tegaskan bahwa "Sistem hanya menunggu Trigger tervalidasi" (bukan berarti sudah masuk posisi).
-5. DILARANG MERINGKAS ACTION PLAN: Kutip seluruh Strategi, Area Pantau, TP, SL, R:R, dan "ALT" (Skenario Alternatif).
+1. KALIMAT PERTAMA WAJIB langsung mengutip isi dari 'Analisis Mendalam' (jika ada) atau status Tren makro.
+2. JIKA Status "ROADMAP", "WATCHLIST", atau "NO ENTRY YET": Anda WAJIB mengutip format Action Plan secara LENGKAP (Strategi, Area Pantau, TP, SL, R:R). 
+3. JANGAN PERNAH MEMOTONG KALIMAT DI TENGAH JALAN. Pastikan analisis Anda tuntas dan diakhiri dengan titik (.).
+4. Nada Bahasa: Sangat teknis, analitis, dan tidak emosional.
 """
 
     try:
         response = client.chat.completions.create(
             model="meta-llama/llama-3.3-70b-instruct",
-            max_tokens=400,
+            max_tokens=600, # Diperbesar agar LLM tidak kehabisan napas
             messages=[{"role": "user", "content": prompt}]
         )
         result = response.choices[0].message.content
+        # Proteksi keamanan ganda jika result terpotong
+        if not result.endswith((".", "!", "?")):
+            result += f"... [Teks terpotong]. Detail Plan: {next_trade_plan}"
+            
         return result.strip() if result else f"[Sistem Otomatis]\n{next_trade_plan}"
     except Exception as e:
         print(f"⚠️ LLM Error: {e}")
-        return f"⚠️ LLM Sedang Sibuk. Menampilkan Raw Data Kalkulasi Mesin:\nStatus: {edge_clarity}\n{next_trade_plan}"
-    
-    try:
-        response = client.chat.completions.create(
-            model="meta-llama/llama-3.3-70b-instruct",
-            max_tokens=200,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        result = response.choices[0].message.content
-        return result.strip() if result else ""
-    except Exception as e:
-        # Fallback reason based on signal type
-        confirmation_text = ""
-        if is_breakout:
-            confirmation_text = f"Breakout di atas {resistance_fmt} dengan volume tinggi terkonfirmasi."
-        elif is_breakdown:
-            confirmation_text = f"Breakdown di bawah {support_fmt} dengan volume tinggi terkonfirmasi."
-        elif is_early_entry:
-            confirmation_text = f"Early entry - belum ada breakout di atas {breakout_fmt}."
-        
-        if is_buy:
-            base = f"Trend bullish menjadi faktor dominan. {confirmation_text}"
-            return f"{base} Tunggu breakout di atas {breakout_fmt} untuk konfirmasi BUY."
-        elif is_sell:
-            base = f"Trend bearish menjadi faktor dominan. {confirmation_text}"
-            return f"{base} Tunggu breakdown di bawah {breakdown_fmt} dengan volume tinggi untuk konfirmasi SELL."
-        else:
-            # HOLD - gunakan data untuk generate alasan yang tepat
-            trend_info = ""
-            if current_price and ma50 and ma200:
-                if current_price < ma50 and current_price < ma200:
-                    trend_info = "harga di bawah MA50 & MA200 menunjukkan dominasi BEARISH"
-                elif current_price > ma50 and current_price > ma200:
-                    trend_info = "harga di atas MA50 & MA200 menunjukkan dominasi BULLISH"
-            
-            return f"HOLD karena {trend_info if trend_info else 'belum ada konfirmasi breakout/breakdown dengan volume tinggi'}. Skenario: BUY jika harga breakout di atas {resistance:.2f} dengan volume tinggi, SELL jika breakdown di bawah {support:.2f} dengan volume tinggi."
+        return f"⚠️ LLM Sedang Sibuk. Raw Plan: {next_trade_plan}"
 
 # ==============================
 # FORMAT OUTPUT
@@ -1949,9 +1921,18 @@ Confidence: {confidence:.0f}%{no_trade_warning}{early_entry_warning}{weights_not
 def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_MODAL):
     """
     Fungsi analisis utama — 10-Point System
-    
+
     Returns: (formatted_output_string, analysis_data_dict)
     """
+    # --- GLOBAL PATCH UNTUK OBV & TIPE DATA ---
+    try:
+        obv_val = float(indikator.get("obv", 0))
+        if indikator.get("obv_flow", "NONE") in ["NONE", ""]:
+            indikator["obv_flow"] = "BULLISH (Accumulation)" if obv_val > 0 else "BEARISH (Distribution)"
+    except Exception:
+        pass
+    # ------------------------------------------
+
     if not indikator:
         empty_data = {
             "sinyal": "HOLD", "entry": 0, "sl": 0, "tp": 0,
