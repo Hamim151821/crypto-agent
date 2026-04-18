@@ -2707,7 +2707,42 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         alasan = f"HOLD karena trend bearish kuat (ADX={adx}). Harga di bawah MA50 & MA200 menunjukkan dominasi seller. Tunggu pullback ke resistance {indikator.get('resistance', 0):.2f} dengan volume tinggi untuk konfirmasi."
     elif trend_is_strong and trend_is_bullish and "bearish" in alasan.lower() and "hold" not in sinyal.lower():
         alasan = f"HOLD karena trend bullish kuat (ADX={adx}). Harga di atas MA50 & MA200 menunjukkan dominasi buyer. Tunggu pullback ke support {indikator.get('support', 0):.2f} dengan volume tinggi untuk konfirmasi."
-    
+
+    # === URGENT ARCHITECTURE FIX: DECOUPLING MARKET VS ENTRY QUALITY ===
+
+    # Evaluasi Market Quality dari Skor Total dan Trend
+    market_quality = "BURUK"
+    if total_skor > 3 and "BULLISH" in trend_direction:
+        market_quality = "BAGUS"
+
+    # Hitung R:R secara real-time
+    if rr_ratio and " : " in rr_ratio:
+        rr_numeric = float(rr_ratio.split(" : ")[1])
+    else:
+        rr_numeric = 0
+
+    entry_quality = "BAGUS" if rr_numeric >= 1.5 else "BURUK"
+
+    # Sinkronisasi Mutlak
+    if entry_quality == "BURUK" or rr_numeric < 1.5:
+        execution_status = "NO TRADE"
+        sinyal = "WAIT (No Valid Setup)"
+        risk_level = "NONE (Di Luar Market)"
+        confidence = 0
+        edge_clarity = "TIDAK ADA EDGE: R:R tidak memenuhi syarat minimal institusi (1:1.5)."
+        execution_setup = "NO TRADE. Abaikan spekulasi."
+    elif entry_quality == "BAGUS" and (("BUY" in sinyal.upper() and "BULLISH" in trend_direction) or ("SELL" in sinyal.upper() and "BEARISH" in trend_direction)):
+        execution_status = "READY TO EXECUTE"
+        vol_status = indikator.get("volume_status", "NORMAL")
+        adx = indikator.get("adx", 0)
+        if vol_status == "TINGGI" or adx > 30:
+            risk_level = "HIGH"
+        else:
+            risk_level = "MEDIUM"
+        confidence = 75
+    else:
+        execution_status = "HOLD"
+
     # Format Output
     output = format_analysis_output(
         symbol=symbol,
