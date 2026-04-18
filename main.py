@@ -2633,6 +2633,12 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         rr_ratio = f"1:{potensi_rr:.1f}"
         copy_trade_status = "CONDITIONAL WATCHLIST"
     else:
+        ui_entry = "-"
+        ui_sl = "-"
+        ui_tp = "-"
+        ui_rr = "-"
+        ui_status = "NO TRADE"
+        risk_pct_display = "-"  # <--- TAMBAHKAN BARIS INI
         entry = 0
         sl = 0
         tp = 0
