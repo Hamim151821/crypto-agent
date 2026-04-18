@@ -1619,42 +1619,46 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     try:
         rsi = float(indikator.get("rsi", 50))
         adx = float(indikator.get("adx", 0))
-        stoch_str = str(indikator.get("stochastic", ""))
+        stoch_str = str(indikator.get("stochastic", "")).upper()
+        vol_str = str(indikator.get("volume", "")).upper()
     except Exception:
-        rsi, adx, stoch_str = 50, 0, ""
+        rsi, adx, stoch_str, vol_str = 50, 0, "", ""
 
-    # 2. Kategori ADX Institusional
-    adx_desc = "Sangat Kuat" if adx >= 25 else ("Moderate/Mulai Terbentuk" if adx >= 20 else "Lemah/Choppy")
+    # 2. Kategori ADX Institusional (Kalibrasi Baru)
+    adx_desc = "Sangat Kuat" if adx >= 30 else ("Kuat" if adx >= 25 else ("Moderate/Mulai Terbentuk" if adx >= 20 else "Lemah/Choppy"))
 
-    # 3. Jembatan Logika (Overbought/Oversold & Counter-Trend Pullback)
-    jembatan_logika = ""
-    if "UP" in market_condition and ("OVERBOUGHT" in stoch_str or rsi >= 70):
-        jembatan_logika = "Meskipun arah tren Bullish, kondisi OVERBOUGHT (Harga kemahalan) membuat entry berisiko. Taktik optimal: tunggu koreksi (BUY ON DIP)."
-    elif "DOWN" in market_condition and ("OVERSOLD" in stoch_str or rsi <= 30):
-        jembatan_logika = "Meskipun arah tren Bearish, kondisi OVERSOLD (Harga jenuh jual) membuat short berisiko. Taktik optimal: tunggu pantulan naik (SELL ON RALLY)."
-    elif "DOWN" in market_condition and total_skor > -3 and "WAIT" in sinyal:
-        # Deteksi fase pullback (Misal MACD Bullish tapi Trend Bearish)
-        jembatan_logika = "Tren makro Bearish, namun momentum jangka pendek sedang menguat. Ini adalah fase PULLBACK (Counter-trend rally), momentum ideal untuk mencari pijakan SELL ON RALLY di area resistance."
-    elif "UP" in market_condition and total_skor < 3 and "WAIT" in sinyal:
-        jembatan_logika = "Tren makro Bullish, namun momentum jangka pendek sedang melemah. Ini adalah fase KOREKSI (Pullback), momentum ideal untuk mencari pijakan BUY ON DIP di area support."
+    # 3. Narasi Kondisi Harga (Counter-Trend & Over-extensions)
+    kondisi_harga = ""
+    if "DOWN" in market_condition:
+        if rsi >= 70 or "OVERBOUGHT" in stoch_str:
+            kondisi_harga = "Harga mengalami Counter-Trend Rally (naik sementara) hingga mencapai fase Overbought. Ini memperkuat probabilitas untuk setup SELL ON RALLY di area resistance."
+        elif rsi <= 30 or "OVERSOLD" in stoch_str:
+            kondisi_harga = "Harga mencapai fase Oversold. Sangat berisiko untuk memaksakan SELL sekarang. Taktik optimal: tunggu pantulan naik (Relief Rally)."
+    elif "UP" in market_condition:
+        if rsi <= 30 or "OVERSOLD" in stoch_str:
+            kondisi_harga = "Harga mengalami koreksi hingga mencapai fase Oversold. Ini memperkuat probabilitas untuk setup BUY ON DIP di area support."
+        elif rsi >= 70 or "OVERBOUGHT" in stoch_str:
+            kondisi_harga = "Harga mencapai fase Overbought (Kemahalan). Sangat berisiko untuk memaksakan BUY sekarang. Taktik optimal: tunggu koreksi."
+
+    # 4. Integrasi Volume
+    vol_context = "Volume transaksi yang tinggi semakin memvalidasi signifikansi level ini." if "TINGGI" in vol_str else ""
 
     prompt = f"""Sebagai AI Quant Trader tingkat lanjut, buat laporan eksekusi (MAKSIMAL 4 KALIMAT) untuk {symbol}.
 
 [DATA KUANTITATIF]
 Tren Makro: {market_condition} | Kekuatan Tren: {adx_desc} (ADX: {adx:.1f})
-Skor Total: {total_skor} | Status Sistem: {edge_clarity}
-System Confidence: {confidence}%
-Jembatan Logika: {jembatan_logika}
+Kondisi Spesifik: {kondisi_harga} {vol_context}
+Status Sistem: {edge_clarity} | System Confidence: {confidence}%
 
-[ACTION PLAN]
+[ACTION PLAN LENGKAP]
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN:
-1. AKURASI TREN: WAJIB gunakan deskripsi kekuatan tren sesuai data ("{adx_desc}"). DILARANG menyebutnya "kuat" jika ADX di bawah 25!
-2. JELASKAN CONFIDENCE: Jika Confidence < 50%, jelaskan secara eksplisit bahwa angka ini rendah KARENA "jarak harga saat ini masih terlalu jauh dari area eksekusi ideal."
-3. FUNGSI JEMBATAN LOGIKA: Jika 'Jembatan Logika' tersedia, WAJIB gunakan kalimat tersebut untuk menjelaskan alasan di balik Action Plan.
-4. DEFINISI ROADMAP: Jika Status Sistem adalah ROADMAP, tegaskan di awal kalimat bahwa "Aset ini dimasukkan ke dalam Watchlist Jangka Panjang."
-5. WAJIB mengutip format Action Plan secara akurat (Strategi, Area Pantau, Trigger, TP, SL, R:R).
+1. DILARANG KERAS menggunakan frasa kaku seperti "Berdasarkan Kondisi Spesifik" atau "Menurut Data Kuantitatif". Rangkai kalimat secara natural layaknya manusia yang sedang menganalisis.
+2. JELASKAN CONFIDENCE: Angka {confidence}% adalah "Probabilitas Setup Masa Depan". JANGAN pernah menyebut "Siap Eksekusi" jika belum ada konfirmasi trigger. Gunakan frasa: "Sistem memantau ketat area high-probability."
+3. WAJIB integrasikan 'Kondisi Spesifik' secara mengalir untuk menjelaskan MENGAPA kita memilih strategi di Action Plan.
+4. WAJIB mengutip format Action Plan secara akurat (Strategi, Area Pantau, Trigger, TP, SL, R:R).
+5. Nada Bahasa: Sangat dingin, sabar, dan terstruktur layaknya Hedge Fund Manager yang tidak pernah FOMO.
 """
 
     try:
@@ -1664,11 +1668,9 @@ ATURAN MUTLAK PENULISAN:
             messages=[{"role": "user", "content": prompt}]
         )
         result = response.choices[0].message.content
-        # Fallback Cerdas: Jika LLM kosong, kembalikan RAW DATA Action Plan
         return result.strip() if result else f"[Sistem Otomatis]\n{next_trade_plan}"
     except Exception as e:
         print(f"⚠️ LLM Error: {e}")
-        # Fallback Cerdas: Jangan ucapkan Standby, langsung print output Engine!
         return f"⚠️ LLM Sedang Sibuk. Menampilkan Raw Data Kalkulasi Mesin:\nStatus: {edge_clarity}\n{next_trade_plan}"
     
     try:
