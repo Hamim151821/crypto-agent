@@ -1616,41 +1616,44 @@ def calculate_data_quality(indikator, berita):
 # ==============================
 def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinyal, market_condition, confidence, rr_ratio, risk_level, execution_status, edge_clarity, next_trade_plan):
     rsi = indikator.get("rsi", 50)
+    stoch = indikator.get("stochastic", "")
     rsi_context = ""
-    if "DOWN" in market_condition and rsi >= 70:
-        rsi_context = "RSI Overbought di tren turun = Konfirmasi momentum SELL ON RALLY sangat kuat."
-    elif "UP" in market_condition and rsi <= 30:
-        rsi_context = "RSI Oversold di tren naik = Konfirmasi momentum BUY ON DIP sangat kuat."
 
-    prompt = f"""Sebagai AI Quant Trader, buat laporan eksekusi untuk {symbol}.
+    # Integrasi Overbought/Oversold ke narasi agar tidak disia-siakan
+    if ("OVERBOUGHT" in str(stoch) or rsi >= 70):
+        if "UP" in market_condition:
+            rsi_context = "Status Overbought di Uptrend = Harga sudah kemahalan (Late Entry). Wajib tunggu koreksi/pullback ke support."
+        else:
+            rsi_context = "Status Overbought di Downtrend = Peluang optimal untuk eksekusi SELL ON RALLY."
+
+    prompt = f"""Sebagai AI Quant Trader, buat laporan eksekusi SINGKAT & PADAT untuk {symbol}.
 
 [DATA KUANTITATIF]
-Arah Makro: {market_condition}
-Status: {execution_status} | Edge: {edge_clarity}
-System Confidence: {confidence}%
+Arah Makro: {market_condition} | Skor Total: {total_skor}
+Edge: {edge_clarity} | System Confidence: {confidence}%
 Konteks Spesifik: {rsi_context}
 
 [ACTION PLAN]
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN:
-1. JIKA Edge adalah "NO SETUP" atau "NO EDGE", tulislah MAKSIMAL 2 KALIMAT saja. DILARANG KERAS menyarankan harga target (TP) atau Stop Loss (SL) agar trader tidak terpancing overtrading! Cukup sebutkan untuk mengabaikan aset.
-2. JIKA Edge adalah "WATCHLIST", Anda wajib mengutip ACTION PLAN secara penuh (TP, SL, R:R).
-3. Integrasikan "Konteks Spesifik" (jika ada) ke dalam argumen tren Anda.
-4. Bahasa harus sangat dingin, disiplin, dan mekanis.
+1. MAKSIMAL 3 KALIMAT. Langsung ke intinya. DILARANG berbasa-basi.
+2. JIKA status WATCHLIST, WAJIB MENGUTIP SELURUH ACTION PLAN (Strategi, Area Pantau, Jarak, Trigger, TP, SL, R:R).
+3. Jika skor tinggi tetapi Confidence 0%, jelaskan secara logis (misalnya: "Meskipun skor makro {total_skor} (kuat), namun harga berjarak jauh dari area ideal...").
+4. Gunakan Konteks Spesifik (jika ada) sebagai justifikasi rencana Anda.
 """
 
     try:
         response = client.chat.completions.create(
             model="meta-llama/llama-3.3-70b-instruct",
-            max_tokens=300,
+            max_tokens=400,
             messages=[{"role": "user", "content": prompt}]
         )
         result = response.choices[0].message.content
-        return result.strip() if result else "Sistem dalam mode standby."
+        return result.strip() if result else "Standby."
     except Exception as e:
         print(f"⚠️ LLM Error: {e}")
-        return "Sistem dalam mode standby."
+        return "Standby."
     
     try:
         response = client.chat.completions.create(
@@ -2515,32 +2518,25 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
 
     jarak_entry_pct = abs(current_price - plan_entry) / current_price * 100 if current_price > 0 else 0
 
-    # 3. Dynamic Confidence & Filter
+    # 3. Finalization: Watchlist vs No Edge Filter
     if execution_status == "NO TRADE":
-        if jarak_entry_pct > 3.0:
-            edge_clarity = "NO SETUP (Jarak Terlalu Jauh)"
-            next_trade_plan = f"Abaikan aset ini. Harga berjarak {jarak_entry_pct:.1f}% dari area ideal."
-            confidence = 0
-        elif "BUY" in setup_type and "Distribution" in obv_flow:
-            edge_clarity = "NO EDGE (Melawan Distribusi)"
-            next_trade_plan = "Abaikan setup Buy. Terdeteksi Distribusi (OBV Bearish). Risiko breakdown support tinggi."
-            confidence = 0
-        elif "SELL" in setup_type and "Accumulation" in obv_flow:
-            edge_clarity = "NO EDGE (Melawan Akumulasi)"
-            next_trade_plan = "Abaikan setup Sell. Terdeteksi Akumulasi (OBV Bullish). Risiko breakout resistance tinggi."
+        if "BUY" in setup_type and "Distribution" in obv_flow:
+            edge_clarity = "NO EDGE (Melawan Arus Distribusi)"
+            next_trade_plan = "Abaikan setup Buy. Terdeteksi Distribusi Institusi (OBV Bearish)."
             confidence = 0
         elif potensi_rr >= 1.2:
-            edge_clarity = "WATCHLIST (Menunggu Konfirmasi)"
-            # Base confidence untuk watchlist
-            base_conf = 35
-            if is_bullish_macro and "Accumulation" in obv_flow: base_conf += 15
-            if is_bearish_macro and "Distribution" in obv_flow: base_conf += 15
-            confidence = base_conf
-
-            next_trade_plan = f"STRATEGI: {setup_type} | AREA PANTAU: {plan_entry:.2f} | TRIGGER: {trigger} | TP: {plan_tp:.2f} | SL: {plan_sl:.2f} (R:R 1:{potensi_rr:.1f}) | BATAL JIKA: {invalidasi}"
+            if jarak_entry_pct > 5.0: # Batas toleransi jarak dinaikkan
+                edge_clarity = "WATCHLIST (Menunggu Deep Pullback)"
+                next_trade_plan = f"STRATEGI: {setup_type}. Area Pantau: {plan_entry:.2f} (Jarak jauh: {jarak_entry_pct:.1f}%). TAHAN EKSEKUSI: Tren terkonfirmasi, namun harga saat ini kemahalan (late entry). Tunggu koreksi dalam ke area ideal. TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}."
+                confidence = 0  # Confidence 0 karena masih jauh
+            else:
+                edge_clarity = "WATCHLIST (Area Probabilitas Tinggi)"
+                next_trade_plan = f"STRATEGI: {setup_type}. Area Pantau: {plan_entry:.2f} (Jarak: {jarak_entry_pct:.1f}%). TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}."
+                confidence = 35 + int(potensi_rr * 5) # Dinamis berdasarkan R:R
+                if confidence > 80: confidence = 80
         else:
             edge_clarity = "NO EDGE (R:R Buruk)"
-            next_trade_plan = f"Abaikan aset. R:R 1:{potensi_rr:.1f} tidak memenuhi standar keamanan."
+            next_trade_plan = f"Abaikan aset. Ruang profit ke target terlalu sempit. R:R tidak memenuhi standar institusi (1:{potensi_rr:.1f})."
             confidence = 0
 
 
