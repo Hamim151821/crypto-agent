@@ -1946,6 +1946,29 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     else:
         execution_setup = "HOLD. Tunggu konfirmasi tren."
 
+    # === NEW FEATURE INJECTION: THE "NEXT TRADE PLAN" ENGINE ===
+
+    # Kalkulasi Eksekusi Tersimulasi
+    if "SIDEWAYS" in market_condition or "BUY" in sinyal.upper():
+        plan_entry = support if support > 0 else current_price * 0.97
+    elif "BULLISH" in trend_direction:
+        plan_entry = ma20 if ma20 > 0 else current_price * 0.98
+    else:
+        plan_entry = current_price * 0.95
+
+    plan_sl = plan_entry * 0.98
+    plan_tp = resistance if resistance > 0 else plan_entry * 1.05
+
+    # Variabel next_trade_plan
+    if "BULLISH" in trend_direction and current_price >= resistance * 0.98:
+        next_trade_plan = f"Tunggu harga koreksi (pullback) ke area {plan_entry:.2f}. Jika ada pantulan, BUY dengan SL di {plan_sl:.2f} dan TP di {plan_tp:.2f}."
+    elif "BEARISH" in trend_direction:
+        next_trade_plan = f"Trend turun dominan. Tunggu harga naik ke resistance {resistance:.2f} untuk mencari peluang REJECT/SELL, atau tunggu pola reversal solid."
+    elif "SIDEWAYS" in market_condition:
+        next_trade_plan = f"Tunggu harga menyentuh support {plan_entry:.2f}. BUY jika tidak tembus, SL ketat di {plan_sl:.2f}, TP di {plan_tp:.2f}."
+    else:
+        next_trade_plan = "Tunggu konfirmasi tren yang jelas sebelum eksekusi."
+
     prompt = f"""Bertindaklah sebagai Lead Execution Trader. Berikan briefing eksekusi yang tegas, tajam, dan tanpa bahasa defensif/robotik (DILARANG menggunakan kata 'Regime', 'Sintesis', 'Waspada', 'Potensi', atau 'Kami mempertimbangkan'). Maksimal 4 kalimat.
 
 DATA MARKET:
