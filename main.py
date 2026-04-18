@@ -2518,26 +2518,25 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
 
     jarak_entry_pct = abs(current_price - plan_entry) / current_price * 100 if current_price > 0 else 0
 
-    # 3. Finalization: Watchlist vs No Edge Filter
+    # 3. Finalization: AUTO FILTER RULE
     if execution_status == "NO TRADE":
-        if "BUY" in setup_type and "Distribution" in obv_flow:
-            edge_clarity = "NO EDGE (Melawan Arus Distribusi)"
-            next_trade_plan = "Abaikan setup Buy. Terdeteksi Distribusi Institusi (OBV Bearish)."
+        if potensi_rr < 1.5:
+            edge_clarity = "NO SETUP (R:R Sub-Standar)"
+            next_trade_plan = f"Abaikan eksekusi. Rasio Reward vs Risk (1:{potensi_rr:.1f}) di bawah batas aman institusi (Min. 1:1.5). Menunggu struktur harga yang lebih menguntungkan."
             confidence = 0
-        elif potensi_rr >= 1.2:
-            if jarak_entry_pct > 5.0: # Batas toleransi jarak dinaikkan
-                edge_clarity = "WATCHLIST (Menunggu Deep Pullback)"
-                next_trade_plan = f"STRATEGI: {setup_type}. Area Pantau: {plan_entry:.2f} (Jarak jauh: {jarak_entry_pct:.1f}%). TAHAN EKSEKUSI: Tren terkonfirmasi, namun harga saat ini kemahalan (late entry). Tunggu koreksi dalam ke area ideal. TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}."
-                confidence = 0  # Confidence 0 karena masih jauh
-            else:
-                edge_clarity = "WATCHLIST (Area Probabilitas Tinggi)"
-                next_trade_plan = f"STRATEGI: {setup_type}. Area Pantau: {plan_entry:.2f} (Jarak: {jarak_entry_pct:.1f}%). TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}."
-                confidence = 35 + int(potensi_rr * 5) # Dinamis berdasarkan R:R
-                if confidence > 80: confidence = 80
+        elif jarak_entry_pct > 5.0:
+            edge_clarity = "NO SETUP (Harga Kemahalan/Terlalu Jauh)"
+            next_trade_plan = f"Abaikan aset ini sementara. Harga berjarak {jarak_entry_pct:.1f}% dari area pantau probabilitas tinggi. Risiko reversal terlalu besar."
+            confidence = 0
+        elif "BUY" in setup_type and "Distribution" in obv_flow:
+            edge_clarity = "NO EDGE (Melawan Distribusi)"
+            next_trade_plan = "Abaikan setup Buy. Terdeteksi Distribusi Institusi (OBV Bearish). Risiko breakdown sangat tinggi."
+            confidence = 0
         else:
-            edge_clarity = "NO EDGE (R:R Buruk)"
-            next_trade_plan = f"Abaikan aset. Ruang profit ke target terlalu sempit. R:R tidak memenuhi standar institusi (1:{potensi_rr:.1f})."
-            confidence = 0
+            edge_clarity = "WATCHLIST (Peluang Tervalidasi)"
+            next_trade_plan = f"STRATEGI: {setup_type}. Area Pantau: {plan_entry:.2f} (Jarak: {jarak_entry_pct:.1f}%). TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}."
+            confidence = 35 + int(potensi_rr * 5)
+            if confidence > 80: confidence = 80
 
 
 
