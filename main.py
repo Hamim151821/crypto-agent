@@ -1934,18 +1934,6 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     else:
         edge_clarity = "TIDAK ADA EDGE: Konfirmasi sinyal lemah atau Risk/Reward tidak ideal."
 
-    # Execution Setup
-    adx = indikator.get("adx", 0)
-    ma20 = indikator.get("ma20", 0)
-    if "TIDAK ADA EDGE" in edge_clarity:
-        execution_setup = "NO TRADE. Abaikan spekulasi."
-    elif "BULLISH" in trend_direction and adx > 20:
-        execution_setup = f"BUY PULLBACK. Entry area: {ma20:.2f} - {current_price:.2f}. SL ketat di {sl_price:.2f}. TP di {tp_price:.2f}."
-    elif "SIDEWAYS" in market_condition:
-        execution_setup = f"RANGE TRADE BUY. Entry di Support {support:.2f}. SL di {sl_price:.2f}. TP di {resistance:.2f}."
-    else:
-        execution_setup = "HOLD. Tunggu konfirmasi tren."
-
     # === NEW FEATURE INJECTION: THE "NEXT TRADE PLAN" ENGINE ===
 
     # Kalkulasi Eksekusi Tersimulasi
@@ -1968,6 +1956,18 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
         next_trade_plan = f"Tunggu harga menyentuh support {plan_entry:.2f}. BUY jika tidak tembus, SL ketat di {plan_sl:.2f}, TP di {plan_tp:.2f}."
     else:
         next_trade_plan = "Tunggu konfirmasi tren yang jelas sebelum eksekusi."
+
+    # Execution Setup
+    adx = indikator.get("adx", 0)
+    ma20 = indikator.get("ma20", 0)
+    if "TIDAK ADA EDGE" in edge_clarity:
+        execution_setup = "NO TRADE. Abaikan spekulasi."
+    elif "BULLISH" in trend_direction and adx > 20:
+        execution_setup = f"BUY PULLBACK. Entry area: {ma20:.2f} - {current_price:.2f}. SL ketat di {sl_price:.2f}. TP di {tp_price:.2f}."
+    elif "SIDEWAYS" in market_condition:
+        execution_setup = f"RANGE TRADE BUY. Entry di Support {support:.2f}. SL di {sl_price:.2f}. TP di {resistance:.2f}."
+    else:
+        execution_setup = "HOLD. Tunggu konfirmasi tren."
 
     prompt = f"""Kamu adalah Algoritma Eksekusi Trading Institusional. Hasilkan laporan maksimal 4 kalimat, 100% berbasis data angka, tanpa bahasa abstrak atau keraguan.
 
