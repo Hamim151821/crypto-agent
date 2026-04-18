@@ -1631,17 +1631,15 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
 
 DATA MARKET SAAT INI:
 Trend: {trend_direction} | Skor: {total_skor}
-R:R Saat Ini: {rr_ratio} | Status: {execution_status}
-Edge: {edge_clarity}
+Status: {execution_status} | Edge: {edge_clarity}
 
 CONDITIONAL PLAN:
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN:
-1. WAJIB mengutip "CONDITIONAL PLAN" secara spesifik (Sebutkan Strategi, Angka SL, TP, Trigger, dan Target Invalidasi).
-2. DILARANG KERAS menyarankan "Entry tanpa Stop Loss" atau berasumsi mengenai resiko.
-3. JIKA status NO TRADE, tegaskan bahwa harga saat ini TIDAK MEMILIKI EDGE, sehingga eksekusi ditunda hingga syarat Conditional Plan terpenuhi.
-4. Gunakan bahasa operasional yang matematis dan langsung pada poin angka.
+1. WAJIB mengutip "CONDITIONAL PLAN" secara persis (Sebutkan Strategi, Area Pantau, Trigger, Target, SL, dan kondisi Batal).
+2. JIKA status NO TRADE, gunakan kalimat: "Eksekusi ditunda karena status {edge_clarity}."
+3. Gunakan bahasa operasional yang dingin, matematis, dan profesional. DILARANG menggunakan kata "potensi" atau "mungkin".
 """
 
     try:
@@ -2452,38 +2450,43 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     adx = indikator.get("adx", 0)
     support = indikator.get("support", 0)
     resistance = indikator.get("resistance", 0)
+    ma20 = indikator.get("ma20", 0)
 
-    # 1. Penentuan Skenario Berdasarkan Trend & Kekuatan ADX
-    if "BEARISH" in trend_direction and adx >= 25:
-        # Trend turun kuat -> Sell Limit di Resistance
-        setup_type = "SELL LIMIT (Follow Trend)"
-        plan_entry = resistance
-        plan_sl = resistance * 1.02
+    # 1. Penentuan Skenario Berdasarkan Trend & Kekuatan ADX (Batas ADX diturunkan ke 20)
+    if "BEARISH" in trend_direction and adx >= 20:
+        setup_type = "SELL PULLBACK (Follow Trend)"
+        plan_entry = ma20 if ma20 > 0 else resistance  # Sell di area pantulan MA20
+        plan_sl = plan_entry * 1.03  # SL 3% di atas entry
         plan_tp = support
-        trigger = "Bearish Rejection (Pin Bar / Engulfing)"
-        invalidasi = f"Setup BATAL jika harga breakout & close di atas {plan_sl:.2f}"
-    elif "BULLISH" in trend_direction and adx >= 25:
-        # Trend naik kuat -> Buy Limit di Support
-        setup_type = "BUY LIMIT (Follow Trend)"
-        plan_entry = support
-        plan_sl = support * 0.98
+        trigger = "Bearish Rejection (Pin Bar/Engulfing) + Volume > 1.2x"
+        invalidasi = f"Tembus & close di atas {plan_sl:.2f}"
+    elif "BULLISH" in trend_direction and adx >= 20:
+        setup_type = "BUY PULLBACK (Follow Trend)"
+        plan_entry = ma20 if ma20 > 0 else support  # Buy di area MA20 (Koreksi Wajar)
+        plan_sl = plan_entry * 0.97  # SL 3% di bawah entry
         plan_tp = resistance
-        trigger = "Bullish Rejection (Pin Bar / Engulfing)"
-        invalidasi = f"Setup BATAL jika harga breakdown & close di bawah {plan_sl:.2f}"
+        trigger = "Bullish Rejection (Pin Bar/Engulfing) + Volume > 1.2x"
+        invalidasi = f"Tembus & close di bawah {plan_sl:.2f}"
     else:
-        # Sideways / Trend Lemah -> Range Trading Buy di Support
-        setup_type = "RANGE BUY"
+        setup_type = "RANGE TRADING"
         plan_entry = support
-        plan_sl = support * 0.98
+        plan_sl = support * 0.97
         plan_tp = resistance
-        trigger = "Pantulan kuat dari area support"
-        invalidasi = f"Setup BATAL jika harga tembus di bawah {plan_sl:.2f}"
+        trigger = "Pantulan kuat dari area support + Volume > 1.2x"
+        invalidasi = f"Tembus & close di bawah {plan_sl:.2f}"
 
     # 2. Rumuskan Conditional Plan
     if plan_entry > 0 and plan_sl > 0:
-        next_trade_plan = f"STRATEGI: {setup_type}. Pantau area {plan_entry:.2f}. TRIGGER: {trigger} dengan Volume > 1.2x. TARGET (TP): {plan_tp:.2f} | RISIKO (SL): {plan_sl:.2f}. INVALIDASI: {invalidasi}."
+        next_trade_plan = f"STRATEGI: {setup_type}. Area Pantau: {plan_entry:.2f}. TRIGGER: {trigger}. TARGET: {plan_tp:.2f} | SL: {plan_sl:.2f}. Batal jika: {invalidasi}."
     else:
-        next_trade_plan = "Menunggu konfirmasi struktur S/R yang lebih jelas untuk menyusun trading plan."
+        next_trade_plan = "Menunggu konfirmasi struktur harga yang lebih jelas."
+
+    # 3. Perbaiki narasi Edge Clarity agar tidak kontradiktif
+    if execution_status == "NO TRADE":
+        if total_skor >= 3 or total_skor <= -3:
+            edge_clarity = "MENUNGGU EDGE (Arah tren sudah jelas, namun harga saat ini belum berada di zona pullback yang aman)."
+        else:
+            edge_clarity = "TIDAK ADA EDGE (Market Choppy, momentum belum terkonfirmasi)."
 
 
 
