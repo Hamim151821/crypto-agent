@@ -1619,28 +1619,28 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
     stoch = indikator.get("stochastic", "")
     rsi_context = ""
 
-    # Integrasi Overbought/Oversold ke narasi agar tidak disia-siakan
-    if ("OVERBOUGHT" in str(stoch) or rsi >= 70):
-        if "UP" in market_condition:
-            rsi_context = "Status Overbought di Uptrend = Harga sudah kemahalan (Late Entry). Wajib tunggu koreksi/pullback ke support."
-        else:
-            rsi_context = "Status Overbought di Downtrend = Peluang optimal untuk eksekusi SELL ON RALLY."
+    if "DOWN" in market_condition and ("OVERSOLD" in str(stoch) or rsi <= 30):
+        rsi_context = "Oversold di Downtrend = Momentum ideal untuk menunggu pullback dan SELL ON RALLY."
+    elif "UP" in market_condition and ("OVERBOUGHT" in str(stoch) or rsi >= 70):
+        rsi_context = "Overbought di Uptrend = Harga rawan koreksi. Momentum ideal untuk menunggu BUY ON DIP."
 
-    prompt = f"""Sebagai AI Quant Trader, buat laporan eksekusi SINGKAT & PADAT untuk {symbol}.
+    prompt = f"""Sebagai AI Quant Trader, buat laporan eksekusi MAKSIMAL 3 KALIMAT untuk {symbol}.
 
 [DATA KUANTITATIF]
 Arah Makro: {market_condition} | Skor Total: {total_skor}
-Edge: {edge_clarity} | System Confidence: {confidence}%
-Konteks Spesifik: {rsi_context}
+Status: {edge_clarity} | System Confidence: {confidence}%
+Konteks Tambahan: {rsi_context}
 
 [ACTION PLAN]
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN:
-1. MAKSIMAL 3 KALIMAT. Langsung ke intinya. DILARANG berbasa-basi.
-2. JIKA status WATCHLIST, WAJIB MENGUTIP SELURUH ACTION PLAN (Strategi, Area Pantau, Jarak, Trigger, TP, SL, R:R).
-3. Jika skor tinggi tetapi Confidence 0%, jelaskan secara logis (misalnya: "Meskipun skor makro {total_skor} (kuat), namun harga berjarak jauh dari area ideal...").
-4. Gunakan Konteks Spesifik (jika ada) sebagai justifikasi rencana Anda.
+1. WAJIB JELASKAN MATRIX CONFIDENCE INI SECARA LOGIS:
+   - Jika Confidence < 40%: Tegaskan aset diabaikan (Jangan sebut TP/SL).
+   - Jika Confidence 40-60%: Tegaskan aset masuk "Watchlist/Roadmap" untuk dipantau jangka panjang. Wajib kutip seluruh Action Plan.
+   - Jika Confidence > 60%: Tegaskan aset "Actionable" atau siap dieksekusi dekat area pantau. Wajib kutip seluruh Action Plan.
+2. JIKA skor tinggi (>3) namun Confidence masih 45% (Roadmap), jelaskan bahwa: "Meskipun skor makro sangat kuat, eksekusi ditahan karena harga saat ini belum berada di zona timing yang ideal."
+3. Jangan bertele-tele. Langsung analisa.
 """
 
     try:
@@ -2518,25 +2518,32 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
 
     jarak_entry_pct = abs(current_price - plan_entry) / current_price * 100 if current_price > 0 else 0
 
-    # 3. Finalization: AUTO FILTER RULE
+    # 3. Decision Driver & Confidence Matrix (The Master Core)
     if execution_status == "NO TRADE":
         if potensi_rr < 1.5:
-            edge_clarity = "NO SETUP (R:R Sub-Standar)"
-            next_trade_plan = f"Abaikan eksekusi. Rasio Reward vs Risk (1:{potensi_rr:.1f}) di bawah batas aman institusi (Min. 1:1.5). Menunggu struktur harga yang lebih menguntungkan."
+            edge_clarity = "NO SETUP (R:R Invalid)"
+            next_trade_plan = f"Abaikan aset. R:R (1:{potensi_rr:.1f}) tidak memenuhi batas institusi (Min 1:1.5)."
             confidence = 0
-        elif jarak_entry_pct > 5.0:
-            edge_clarity = "NO SETUP (Harga Kemahalan/Terlalu Jauh)"
-            next_trade_plan = f"Abaikan aset ini sementara. Harga berjarak {jarak_entry_pct:.1f}% dari area pantau probabilitas tinggi. Risiko reversal terlalu besar."
+        elif ("BUY" in setup_type and "Distribution" in obv_flow) or ("SELL" in setup_type and "Accumulation" in obv_flow):
+            edge_clarity = "NO EDGE (Melawan Arus Volume)"
+            next_trade_plan = f"Abaikan setup {setup_type}. Terdeteksi anomali volume (OBV tidak searah tren)."
             confidence = 0
-        elif "BUY" in setup_type and "Distribution" in obv_flow:
-            edge_clarity = "NO EDGE (Melawan Distribusi)"
-            next_trade_plan = "Abaikan setup Buy. Terdeteksi Distribusi Institusi (OBV Bearish). Risiko breakdown sangat tinggi."
-            confidence = 0
+        elif jarak_entry_pct > 4.0:
+            if total_skor >= 3 or total_skor <= -3:
+                # Saham Bagus tapi Harga Jauh -> Buat Roadmap, Jangan Dibuang!
+                edge_clarity = "ROADMAP (Long-Term Watchlist)"
+                next_trade_plan = f"ROADMAP: Skor makro kuat ({total_skor}), namun harga kemahalan/terlalu jauh ({jarak_entry_pct:.1f}%). TAHAN EKSEKUSI. Tunggu harga mendekat. STRATEGI: {setup_type} | PANTAU: {plan_entry:.2f} | TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}."
+                confidence = 45 # Masuk Watchlist Range (40-60)
+            else:
+                edge_clarity = "NO SETUP (Harga Jauh & Momentum Lemah)"
+                next_trade_plan = f"Abaikan sementara. Harga berjarak {jarak_entry_pct:.1f}% tanpa dukungan momentum skor yang memadai."
+                confidence = 0
         else:
-            edge_clarity = "WATCHLIST (Peluang Tervalidasi)"
-            next_trade_plan = f"STRATEGI: {setup_type}. Area Pantau: {plan_entry:.2f} (Jarak: {jarak_entry_pct:.1f}%). TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}."
-            confidence = 35 + int(potensi_rr * 5)
-            if confidence > 80: confidence = 80
+            edge_clarity = "READY WATCHLIST (Timing Akurat)"
+            # Menghitung probabilitas kedekatan dan R:R
+            calc_conf = 50 + int(potensi_rr * 5) - int(jarak_entry_pct * 2)
+            confidence = max(60, min(80, calc_conf)) # Range Actionable (>60)
+            next_trade_plan = f"STRATEGI: {setup_type}. PANTAU: {plan_entry:.2f} (Jarak ideal: {jarak_entry_pct:.1f}%). TRIGGER: {trigger}. TP: {plan_tp:.2f} | SL: {plan_sl:.2f} | R:R 1:{potensi_rr:.1f}. BATAL JIKA: {invalidasi}."
 
 
 
