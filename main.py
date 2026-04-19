@@ -1683,7 +1683,7 @@ Sistem ini dalam status NO TRADE. DILARANG MERANCANG STRATEGI APAPUN. DILARANG M
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
 1. NEGATIVE PROMPT KHUSUS: DILARANG KERAS memunculkan frasa "rasio risiko-keuntungan", "R:R", "setiap unit risiko", "Take Profit", "Stop Loss", atau angka perbandingan rasio.
-2. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA gunakan alfabet Latin (A-Z) murni. DILARANG KERAS memakai aksara Sirilik (Cyrillic), Arab, atau bahasa asing. DILARANG menyebut nama variabel backend (seperti "Sinyal Internal", "Edge Clarity") dalam narasi. Anda adalah analis profesional.
+2. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA gunakan alfabet Latin (A-Z). WAJIB gunakan titik (.) pemisah desimal. DILARANG keras aksara asing. DILARANG menyebut nama variabel backend (seperti "Edge Clarity"). Anda analis independen.
 3. BIND SINYAL DISPLAY: Status saat ini adalah "{nama_sinyal_tabel}". Jika Anda menyebut status, Anda WAJIB menggunakan frasa "{nama_sinyal_tabel}" secara sama persis 100%. Jangan pernah diubah menjadi sinonim seperti "Neutral Watch" atau "Low Prio".
 4. KALIMAT PERTAMA WAJIB langsung mengutip isi dari 'Analisis Mendalam' (jika ada) atau status Tren makro. Jangan pernah memotong kalimat.
 """
@@ -1707,7 +1707,7 @@ System Confidence: {confidence}%
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
-1. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA gunakan alfabet Latin (A-Z) murni. DILARANG keras memakai aksara Sirilik atau bahasa asing. DILARANG menyebut nama variabel backend (seperti "Sinyal Internal") dalam narasi. Anda adalah analis profesional.
+1. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA alfabet Latin (A-Z). WAJIB gunakan tanda titik (.) sebagai pemisah desimal, BUKAN koma (contoh: 272.30, bukan 272,30). DILARANG menyebut nama variabel backend (seperti "Sinyal Internal") dalam narasi. Anda analis murni.
 2. BIND SINYAL DISPLAY: Status saat ini adalah "{nama_sinyal_tabel}". Anda WAJIB menggunakan frasa "{nama_sinyal_tabel}" persis 100%. JANGAN GANTI dengan frasa "Neutral Watch" dsb.
 3. ACTION PLAN WAJIB: Anda WAJIB mengutip format Action Plan secara LENGKAP (Strategi, TP, SL, R:R). Jangan biarkan narasi gantung tanpa strategi ini.
 4. CONFIDENCE RULE: {conf_rule}
@@ -1882,9 +1882,16 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
             
         position_size_display = f"{position_size:,.6f}" if position_size and float(position_size) > 0 else "-"
         risk_reward_display = str(risk_metrics.get("risk_reward", 0))
-        risk_pct_val = risk_metrics.get("risk_pct", 0)
-        risk_pct_display = f"{risk_pct_val}%" if risk_pct_val > 0 else "-"
-        kelly_val = risk_metrics.get("kelly_pct", 0)
+        risk_pct_val = round(risk_metrics.get("risk_pct", 0), 1)
+        
+        if risk_pct_val > 0:
+            risk_pct_display = f"{risk_pct_val}%"
+            sl_final_display = f"{sl_display} (Risk: {risk_pct_display})"
+        else:
+            risk_pct_display = "-"
+            sl_final_display = sl_display
+            
+        kelly_val = round(risk_metrics.get("kelly_pct", 0), 1)
         kelly_display = f"{kelly_val}%" if kelly_val > 0 else "-"
     
     # Data Quality SELALU tampilkan (bukan hanya saat trading)
@@ -1940,6 +1947,7 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
     if 'kelly_display' not in locals(): kelly_display = "-"
     if 'risk_level' not in locals(): risk_level = "LOW (Standby)"
     if 'position_size_display' not in locals(): position_size_display = "-"
+    if 'sl_final_display' not in locals(): sl_final_display = sl_display
     # --------------------------------------------------------------------
 
     output = f"""📊 ANALISIS {symbol.upper()} | Data Quality: {data_quality_display}
@@ -1983,7 +1991,7 @@ Confidence: {confidence:.0f}%{no_trade_warning}{early_entry_warning}{weights_not
 📊 RISK MANAGEMENT
 ============================================================
 • Entry:        {entry_display}
-• Stop Loss:    {sl_display} (Risk: {risk_pct_display})
+• Stop Loss:    {sl_final_display}
 • Take Profit:  {tp_display}
 • Risk/Reward:  {rr_final_display}
 • Kelly:        {kelly_display}
@@ -2704,6 +2712,13 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     tp = float(ui_tp) if ui_tp != "-" else 0
     rr_ratio = ui_rr
     copy_trade_status = ui_status
+
+    # Recalculate position setup automatically if Actionable
+    if confidence >= 60 and entry > 0 and sl > 0:
+        curr = "USD" if jenis == "Crypto" else ("IDR" if symbol.endswith(".JK") else "USD")
+        pseudo_signal = "BUY" if "BUY" in setup_type else ("SELL" if "SELL" in setup_type else sinyal)
+        position_size = calculate_position_size(modal, entry, sl, pseudo_signal, market_condition, curr)
+        risk_metrics = calculate_risk_metrics(harga, entry, sl, tp, indikator, pseudo_signal, modal, curr)
 
     # CATATAN UNTUK AI IDE:
     # Pastikan variabel entry, sl, tp, rr_ratio, dan copy_trade_status
