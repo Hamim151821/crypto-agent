@@ -1615,8 +1615,29 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
         stoch_str = str(indikator.get("stochastic", "")).upper()
         vol_str = str(indikator.get("volume", "")).upper()
         obv_str = str(indikator.get("obv_flow", "")).upper()
+        current_price = float(indikator.get("current_price", 0))
+        resistance = float(indikator.get("resistance", 0))
     except Exception:
-        rsi, adx, stoch_str, vol_str, obv_str = 50, 0, "", "", ""
+        rsi, adx, stoch_str, vol_str, obv_str, current_price, resistance = 50, 0, "", "", "", 0, 0
+
+    # Exact Terminology Validation
+    if confidence >= 60:
+        nama_sinyal_tabel = "READY (Waiting Trigger)"
+    elif confidence >= 40:
+        nama_sinyal_tabel = "WATCHLIST (Active Monitoring)"
+    elif confidence >= 30:
+        nama_sinyal_tabel = "LOW PRIO WATCHLIST (No Man's Land)"
+    else:
+        nama_sinyal_tabel = "IGNORE (No Valid Setup)"
+
+    # S/R Contextual Awareness
+    is_testing_res = False
+    if resistance > 0 and current_price > 0:
+        if abs(resistance - current_price) / resistance * 100 <= 2.0:
+            is_testing_res = True
+            nama_sinyal_tabel = nama_sinyal_tabel.replace("No Man's Land", "Menguji Resistance")
+            if "No Man's Land" in edge_clarity:
+                edge_clarity = edge_clarity.replace("No Man's Land", "Menguji Resistance")
 
     adx_desc = "Sangat Kuat" if adx >= 40 else ("Kuat" if adx >= 25 else ("Moderate/Mulai Terbentuk" if adx >= 20 else "Lemah/Choppy"))
 
@@ -1635,38 +1656,40 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
             if rsi >= 70 or "OVERBOUGHT" in stoch_str:
                 kondisi_harga = "Harga mengalami Counter-Trend Rally (Overbought). Ini memperkuat probabilitas setup SELL ON RALLY di resistance."
             elif total_skor > -3:
-                # Logika Pullback Klasik
                 kondisi_harga = "Tren utama Bearish, namun momentum jangka pendek sedang naik. Ini adalah fase PULLBACK (Counter-Trend Rally), momentum ideal untuk mencari pijakan SELL ON RALLY di area resistance."
         elif "UP" in market_condition:
             if rsi <= 30 or "OVERSOLD" in stoch_str:
                 kondisi_harga = "Harga terkoreksi (Oversold). Ini memperkuat probabilitas setup BUY ON DIP di support."
             elif total_skor < 3:
-                # Logika Koreksi Klasik
                 kondisi_harga = "Tren utama Bullish, namun momentum jangka pendek melemah. Ini adalah fase KOREKSI, momentum ideal untuk mencari pijakan BUY ON DIP di area support."
             
+    if is_testing_res:
+        kondisi_harga += " PERHATIAN: Harga saat ini sedang menguji Resistance (Rentan Rejection)."
+        
     vol_context = "Volume transaksi yang sepi menandakan market belum siap breakout." if "RENDAH" in vol_str or ("NORMAL" in vol_str and adx < 20) else ""
         
-    if confidence == 0 or "IGNORE" in sinyal.upper():
-        branching_rules = "2. IF Confidence == 0 atau Sinyal IGNORE: Narasi HANYA boleh menjelaskan mengapa kriteria tidak terpenuhi (fokus pada Missing Requirements). Dilarang memunculkan frasa kontradiktif seperti 'System Confidence tinggi' atau membahas probabilitas profit. JANGAN berikan angka tebakan R:R, Take Profit, atau Stop Loss karena datanya Kosong/Null."
+    if confidence == 0 or "IGNORE" in sinyal.upper() or "HOLD" in sinyal.upper():
+        branching_rules = "2. ANTI-HALLUCINATION WAJIB: Status adalah NO TRADE atau IGNORE. Narasi HANYA boleh menjelaskan mengapa kriteria tidak terpenuhi. DILARANG KERAS menyebutkan angka Risk/Reward (R:R), persentase keuntungan, kalimat penjelasan R:R, Take Profit, atau Stop Loss. Dilarang memunculkan frasa kontradiktif seperti 'System Confidence tinggi'."
     else:
-        branching_rules = "2. JIKA Confidence > 60%: WAJIB berikan kalimat penjelas eksplisit di akhir paragraf mengapa angka tersebut tinggi. Contoh: \"System Confidence tinggi ({confidence}%) karena kombinasi tren yang solid, konfluensi indikator...\""
+        branching_rules = "2. JIKA Confidence > 60%: WAJIB berikan kalimat penjelas eksplisit di akhir paragraf mengapa angka tersebut tinggi (berdasarkan konfluensi indikator, dll)."
 
     prompt = f"""Sebagai AI Quant Trader tingkat lanjut, buat laporan eksekusi untuk {symbol}.
 
 [DATA KUANTITATIF]
 Tren Makro: {market_condition} | Kekuatan Tren: {adx_desc} (ADX: {adx:.1f})
 Analisis Mendalam: {kondisi_harga} {vol_context}
-Status Sistem: {edge_clarity} | System Confidence: {confidence}%
+Status Sistem (Edge Clarity): {edge_clarity} | System Confidence: {confidence}%
 Sinyal Internal: {sinyal}
+Nama Sinyal Tampilan: {nama_sinyal_tabel}
 
 [ACTION PLAN LENGKAP]
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
-1. KALIMAT PERTAMA WAJIB langsung mengutip isi dari 'Analisis Mendalam' (jika ada) atau status Tren makro.
+1. TATA BAHASA: Gunakan Bahasa Indonesia baku, hindari glitch bahasa asing/kata acak. Nama sinyal dalam teks WAJIB 100% sama dengan "{nama_sinyal_tabel}". JANGAN diubah menjadi frasa lain (seperti "Neutral Watch").
 {branching_rules}
-3. JIKA Status "ROADMAP", "WATCHLIST", atau "NO ENTRY YET": Anda WAJIB mengutip format Action Plan secara LENGKAP (Strategi, Area Pantau, TP, SL, R:R).
-4. JANGAN PERNAH MEMOTONG KALIMAT DI TENGAH JALAN.
+3. JIKA Status bukan NO TRADE: Anda WAJIB mengutip format Action Plan secara LENGKAP (Strategi, TP, SL, R:R). 
+4. KALIMAT PERTAMA WAJIB langsung mengutip isi dari 'Analisis Mendalam' (jika ada) atau status Tren makro. JANGAN PERNAH MEMOTONG KALIMAT DI TENGAH JALAN.
 """
 
     try:
@@ -2671,10 +2694,10 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     # -----------------------------------------------------
 
     # AI Reasoning (LLM call — hanya untuk penjelasan)
-    # Include additional context for better reasoning
+    # Gunakan ui_rr karena rr_display is undefined
     alasan = get_ai_reasoning(
         symbol, indikator, sentimen, skor_detail, total_skor,
-        sinyal, market_condition, confidence, rr_display,
+        sinyal, market_condition, confidence, ui_rr,
         risk_level, execution_status, edge_clarity, next_trade_plan
     )
 
