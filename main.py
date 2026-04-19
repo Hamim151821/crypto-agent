@@ -1694,9 +1694,10 @@ Untuk penulisan narasi, terapkan pembatasan bahasa mutlak berikut:
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
 1. NEGATIVE PROMPT KHUSUS: DILARANG KERAS memunculkan frasa "rasio risiko-keuntungan", "R:R", "setiap unit risiko", "Take Profit", "Stop Loss", atau angka perbandingan rasio.
-2. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA gunakan alfabet Latin. WAJIB gunakan titik (.) pemisah desimal. DILARANG KERAS memakai frasa yang mengindikasikan persiapan aksi (seperti "mencari pijakan", "bersiap", atau "menunggu konfirmasi eksekusi"). Gunakan observasi murni: "Potensi pullback masih dalam tahap awal dan belum tervalidasi. Belum ada konfirmasi untuk valid setup."
-3. BIND SINYAL DISPLAY: Status saat ini adalah "{nama_sinyal_tabel}". Jika Anda menyebut status, Anda WAJIB menggunakan frasa "{nama_sinyal_tabel}" secara sama persis 100%. Jangan pernah diubah menjadi sinonim seperti "Neutral Watch" atau "Low Prio".
-4. KALIMAT PERTAMA WAJIB langsung mengutip isi dari 'Analisis Mendalam' (jika ada) atau status Tren makro. Jangan pernah memotong kalimat.
+2. ZERO TOLERANCE FOR COMMA DECIMALS: Anda DIWAJIBKAN 100% menggunakan tanda titik (.) sebagai pemisah desimal saat mengutip angka (Contoh: tulis 15.6, BUKAN 15,6). Blokir total penggunaan format desimal lokal dengan koma.
+3. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA gunakan alfabet Latin. DILARANG KERAS memakai frasa yang mengindikasikan persiapan aksi (seperti "mencari pijakan", "bersiap", atau "menunggu konfirmasi eksekusi"). Gunakan observasi murni: "Potensi pullback masih dalam tahap awal dan belum tervalidasi. Belum ada konfirmasi untuk valid setup."
+4. BIND SINYAL DISPLAY: Status saat ini adalah "{nama_sinyal_tabel}". Jika Anda menyebut status, Anda WAJIB menggunakan frasa "{nama_sinyal_tabel}" secara sama persis 100%. Jangan pernah diubah menjadi sinonim seperti "Neutral Watch" atau "Low Prio".
+5. BAN ROBOTIC INTRODUCTIONS: DILARANG menggunakan kalimat pembuka kaku seperti "Berikut adalah laporan..." atau "Berdasarkan analisis...". Anda WAJIB langsung masuk ke inti poin analitis secara profesional (Contoh: "Tren makro {symbol} saat ini sedang berada dalam fase..."). Jangan pernah memotong kalimat di tengah jalan.
 5. INSIGHT EXTRACTION (KONTRADIKSI DATA): Jika ada kontradiksi data (misal: Tren Bearish KUAT tapi MACD Bullish & Stochastic Oversold), Anda WAJIB merangkumnya sebagai "Early Pullback Signal" atau "Divergensi Awal". Jelaskan bahwa ini adalah anomali yang perlu diawasi.
 """
     else:
@@ -1727,11 +1728,12 @@ Untuk penulisan narasi, terapkan pembatasan bahasa mutlak berikut:
 - Final Regex/Word Check: Sebelum menyajikan analisis, pastikan tidak ada karakter yang mengandung diakritik (seperti: đ, á, à, ả, ã, ạ, dsb). Jika terdeteksi, format ulang kalimat tersebut ke bahasa Indonesia baku.
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
-1. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA alfabet Latin (A-Z). WAJIB gunakan tanda titik (.) sebagai pemisah desimal. DILARANG menyebut variabel backend (seperti "Sinyal Internal").
-2. BIND SINYAL DISPLAY: Status saat ini adalah "{nama_sinyal_tabel}". Anda WAJIB menggunakan frasa "{nama_sinyal_tabel}" persis 100%.
-3. ACTION PLAN WAJIB: Anda WAJIB mengutip format Action Plan secara LENGKAP (Strategi, TP, SL, R:R). Jangan biarkan narasi gantung tanpa strategi ini.
-4. CONFIDENCE RULE: {conf_rule}
-5. KALIMAT PERTAMA WAJIB mengutip isi dari 'Analisis Mendalam' atau status Tren makro.
+1. ZERO TOLERANCE FOR COMMA DECIMALS: Anda DIWAJIBKAN 100% menggunakan tanda titik (.) sebagai pemisah desimal saat mengutip angka (Contoh: tulis 15.6, BUKAN 15,6). Blokir total penggunaan format desimal lokal dengan koma.
+2. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA alfabet Latin (A-Z). DILARANG menyebut variabel backend (seperti "Sinyal Internal").
+3. BIND SINYAL DISPLAY: Status saat ini adalah "{nama_sinyal_tabel}". Anda WAJIB menggunakan frasa "{nama_sinyal_tabel}" persis 100%.
+4. ACTION PLAN WAJIB: Anda WAJIB mengutip format Action Plan secara LENGKAP (Strategi, TP, SL, R:R). Jangan biarkan narasi gantung tanpa strategi ini.
+5. CONFIDENCE RULE: {conf_rule}
+6. BAN ROBOTIC INTRODUCTIONS: DILARANG menggunakan kalimat pembuka kaku seperti "Berikut adalah laporan..." atau "Berdasarkan analisis...". Anda WAJIB langsung masuk ke inti poin analitis secara profesional (Contoh: "Tren makro {symbol} saat ini sedang berada dalam fase...").
 6. INSIGHT EXTRACTION (KONTRADIKSI DATA): Jika ada kontradiksi data (misal: Tren Bearish KUAT tapi MACD Bullish & Stochastic Oversold), Anda WAJIB merangkumnya sebagai "Early Pullback Signal" atau "Divergensi Awal". Jelaskan bahwa ini adalah anomali yang perlu diawasi.
 """
 
