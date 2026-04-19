@@ -1282,7 +1282,11 @@ def calculate_score(indikator, sentimen, weights, market_condition, trend_direct
             scores["trend"] = -3  # Mutlak bearish (Prioritas Tertinggi)
         # PRIORITAS TERTINGGI: Harga di atas semua MA = mutlak bullish
         elif current_price > ma20 and current_price > ma50 and current_price > ma200:
-            scores["trend"] = 3   # Mutlak bullish (Prioritas Tertinggi)
+            # Penalti jika MA20 masih di bawah MA50 (Transisi Bullish)
+            if ma20 > ma50:
+                scores["trend"] = 3   # Perfect bullish alignment
+            else:
+                scores["trend"] = 2   # Transisi Bullish (belum sepenuhnya terpenuhi)
         # ADX < 20 HANYA jika harga tersangkut di antara garis MA
         elif adx > 0 and adx < 20:
             scores["trend"] = 0   # Sideways HANYA jika harga tersangkut di antara garis MA
@@ -1672,16 +1676,39 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
 
     adx_desc = "Sangat Kuat" if adx >= 40 else ("Kuat" if adx >= 25 else ("Moderate/Mulai Terbentuk" if adx >= 20 else "Lemah/Choppy"))
 
+    # Price Action Proximity (Jarak Harga vs S/R)
+    proximity_label = ""
+    harga = indikator.get("current_price", 0)
+    support = indikator.get("support", 0)
+    resistance = indikator.get("resistance", 0)
+    if harga > 0 and support > 0 and resistance > 0:
+        dist_to_support_pct = abs(harga - support) / harga * 100
+        dist_to_resistance_pct = abs(harga - resistance) / harga * 100
+        if dist_to_resistance_pct < 1.5:
+            proximity_label = "TESTING RESISTANCE"
+        elif dist_to_support_pct < 1.5:
+            proximity_label = "TESTING SUPPORT"
+        else:
+            range_size = resistance - support
+            if range_size > 0:
+                pos_in_range = (harga - support) / range_size
+                if pos_in_range < 0.3 or pos_in_range > 0.7:
+                    proximity_label = "NEAR SUPPORT/RESISTANCE"
+                else:
+                    proximity_label = "No Man's Land"
+            else:
+                proximity_label = "No Man's Land"
+
     kondisi_harga = ""
-    if adx < 20: 
+    if adx < 20:
         if total_skor >= 5 and "SELL" in next_trade_plan:
             kondisi_harga = f"PARADOKS: Skor Makro Bullish (+{total_skor}), namun market Sideways dan harga di Resistance. Strategi dikalibrasi ke Counter-Trend Short (Range Sell)."
         elif total_skor <= -5 and "BUY" in next_trade_plan:
             kondisi_harga = f"PARADOKS: Skor Makro Bearish ({total_skor}), namun market Sideways dan harga di Support. Strategi dikalibrasi ke Counter-Trend Long (Range Buy)."
         elif "DOWN" in market_condition and "DISTRIBUTION" in obv_str:
-            kondisi_harga = "Market Sideways dengan tekanan Bearish dominan (OBV Distribusi). Peluang terbaik adalah SELL di resistance."
+            kondisi_harga = f"Market Sideways dengan tekanan Bearish dominan (OBV Distribusi). {proximity_label}. Peluang terbaik adalah SELL di resistance."
         elif "UP" in market_condition and "ACCUMULATION" in obv_str:
-            kondisi_harga = "Market Sideways dengan sokongan Bullish (OBV Akumulasi). Peluang terbaik adalah BUY di support."
+            kondisi_harga = f"Market Sideways dengan sokongan Bullish (OBV Akumulasi). {proximity_label}. Peluang terbaik adalah BUY di support."
     else:
         if "DOWN" in market_condition:
             if rsi >= 70 or "OVERBOUGHT" in stoch_str:
@@ -1705,7 +1732,7 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
             
     vol_context = "Volume transaksi yang sepi menandakan market belum siap breakout." if "RENDAH" in vol_str or ("NORMAL" in vol_str and adx < 20) else ""
         
-    prompt = f"""Sebagai AI Quant Trader tingkat lanjut, buat laporan eksekusi untuk {symbol}.
+    prompt = f"""Sebagai AI Quant Trader tingkat lanjut, buat laporan eksekusi ringkas untuk {symbol}.
 
 [DATA KUANTITATIF]
 Tren Makro: {market_condition} | Kekuatan Tren: {adx_desc} (ADX: {adx:.1f})
@@ -1717,9 +1744,11 @@ Status Sistem: {edge_clarity} | System Confidence: {confidence}%
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
 1. KALIMAT PERTAMA WAJIB langsung mengutip isi dari 'Analisis Mendalam' (jika ada) atau status Tren makro.
-2. JIKA Confidence > 60%: WAJIB berikan kalimat penjelas eksplisit di akhir paragraf mengapa angka tersebut tinggi. Contoh: "System Confidence tinggi ({confidence}%) karena kombinasi tren yang solid, konfluensi indikator, dan posisi harga yang ideal dengan rasio risiko-imbalan yang sangat baik."
-3. JIKA Status "ROADMAP", "WATCHLIST", atau "NO ENTRY YET": Anda WAJIB mengutip format Action Plan secara LENGKAP (Strategi, Area Pantau, TP, SL, R:R).
-4. JANGAN PERNAH MEMOTONG KALIMAT DI TENGAH JALAN.
+2. JIKA Confidence > 60%: Berikan kesimpulan ringkas mengapa confidence tinggi.
+3. JIKA Status "ROADMAP", "WATCHLIST", atau "NO ENTRY YET": Kutip Action Plan lengkap.
+4. ZERO-FLUFF: DILARANG keras menjelaskan definisi metrik dasar. Hanya kesimpulan ringkas seperti analis hedge fund.
+5. JIKA rr_ratio == '-' atau status_trade == 'NO TRADE': JANGAN sebutkan R:R sama sekali.
+6. JANGAN potong kalimat di tengah jalan.
 """
 
     try:
