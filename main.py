@@ -1690,7 +1690,7 @@ Nama Sinyal Tampilan: {nama_sinyal_tabel}
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
-1. TATA BAHASA: Gunakan Bahasa Indonesia baku. HANYA gunakan alfabet Latin (A-Z). DILARANG KERAS memakai aksara Sirilik (Cyrillic), Arab, atau encoding bahasa asing apapun! Nama sinyal dalam teks WAJIB 100% sama dengan "{nama_sinyal_tabel}". JANGAN diubah menjadi frasa lain (seperti "Neutral Watch").
+1. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA gunakan alfabet Latin (A-Z). DILARANG KERAS memakai aksara Sirilik (Cyrillic) atau bahasa asing! DILARANG KERAS menyebutkan nama variabel backend (seperti "Sinyal Internal", "Edge Clarity", "Confidence Tinggi") dalam narasi. Anda adalah analis profesional, sampaikan secara natural. Nama sinyal = "{nama_sinyal_tabel}".
 {branching_rules}
 3. JIKA Status bukan NO TRADE: Anda WAJIB mengutip format Action Plan secara LENGKAP (Strategi, TP, SL, R:R). 
 4. KALIMAT PERTAMA WAJIB langsung mengutip isi dari 'Analisis Mendalam' (jika ada) atau status Tren makro. JANGAN PERNAH MEMOTONG KALIMAT DI TENGAH JALAN.
@@ -1854,20 +1854,15 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
         kelly_display = "-"
     else:
         is_trade = "BUY" in sinyal or "SELL" in sinyal
-        copy_trade_status = "OPEN" if is_trade else "NO TRADE"
-
-    # Override for confidence-based status
-    if confidence >= 60:
-        copy_trade_status = "PENDING EXECUTION (Waiting Trigger)"
-        position_size_display = f"{position_size:,.6f}" if position_size and position_size > 0 else "-"
-        risk_reward_display = str(risk_metrics.get("risk_reward", 0))
-        risk_pct_val = risk_metrics.get("risk_pct", 0)
-        risk_pct_display = f"{risk_pct_val}%" if risk_pct_val > 0 else "-"
-        kelly_val = risk_metrics.get("kelly_pct", 0)
-        kelly_display = f"{kelly_val}%" if kelly_val > 0 else "-"
-    elif confidence >= 40:
-        copy_trade_status = "CONDITIONAL WATCHLIST"
-        position_size_display = f"{position_size:,.6f}" if position_size and position_size > 0 else "-"
+        
+        if confidence >= 60:
+            copy_trade_status = "PENDING EXECUTION (Waiting Trigger)"
+        elif confidence >= 40:
+            copy_trade_status = "CONDITIONAL WATCHLIST"
+        else:
+            copy_trade_status = "OPEN" if is_trade else "NO TRADE"
+            
+        position_size_display = f"{position_size:,.6f}" if position_size and float(position_size) > 0 else "-"
         risk_reward_display = str(risk_metrics.get("risk_reward", 0))
         risk_pct_val = risk_metrics.get("risk_pct", 0)
         risk_pct_display = f"{risk_pct_val}%" if risk_pct_val > 0 else "-"
@@ -1913,9 +1908,8 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
     r1 = indikator.get('r1', 0) if indikator else 0
     s1 = indikator.get('s1', 0) if indikator else 0
     
-    # Validasi RR
-    rr_valid_icon = "✓" if risk_metrics.get("is_valid_rr", False) else "✗"
-    rr_final_display = f"{rr_ratio} {rr_valid_icon}" if rr_ratio != "-" else "-"
+    # Validasi RR (Clean output)
+    rr_final_display = f"{rr_ratio}" if rr_ratio != "-" else "-"
 
     # --- SAFETY NET: MENCEGAH UNBOUND LOCAL ERROR SAAT HOLD/NO TRADE ---
     if 'entry_display' not in locals(): entry_display = "-"
