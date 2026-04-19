@@ -1912,11 +1912,18 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
         is_trade = "BUY" in sinyal or "SELL" in sinyal
         copy_trade_status = "OPEN" if is_trade else "NO TRADE"
 
+    # Set displays for trade setups
+    if is_trade:
+        position_size_display = f"{position_size:,.6f}" if position_size and position_size > 0 else "-"
+        risk_reward_display = str(risk_metrics.get("risk_reward", 0)) if risk_metrics.get("risk_reward", 0) > 0 else "-"
+        risk_pct_display = f"{risk_metrics.get('risk_pct', 0)}%" if risk_metrics.get('risk_pct', 0) > 0 else "-"
+        kelly_display = f"{risk_metrics.get('kelly_pct', 0)}%" if risk_metrics.get('kelly_pct', 0) > 0 else "-"
+
     # Override for confidence-based status
     if confidence >= 60:
         copy_trade_status = "PENDING EXECUTION (Waiting Trigger)"
-        position_size_display = f"{position_size:,.6f}" if position_size and position_size > 0 else "-"
-        risk_reward_display = str(risk_metrics.get("risk_reward", 0))
+        if is_trade:
+            position_size_display = f"{position_size:,.6f}" if position_size and position_size > 0 else "-"  # Override if needed
         risk_pct_val = risk_metrics.get("risk_pct", 0)
         risk_pct_display = f"{risk_pct_val}%" if risk_pct_val > 0 else "-"
         kelly_val = risk_metrics.get("kelly_pct", 0)
@@ -1934,7 +1941,7 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
     data_score = data_quality.get("quality_score", 0)
     data_grade = data_quality.get("quality_grade", "N/A")
     if data_score > 0:
-        data_quality_display = f"{data_grade} ({data_score}%)"
+        data_quality_display = f"{data_grade} ({data_score:.1f}%)"
     else:
         data_quality_display = "N/A"
     
@@ -2028,7 +2035,7 @@ Confidence: {confidence:.0f}%{no_trade_warning}{early_entry_warning}{weights_not
 • Entry:        {entry_display}
 • Stop Loss:    {sl_display} (Risk: {risk_pct_display})
 • Take Profit:  {tp_display}
-• Risk/Reward: {rr_ratio} | R:R = 1:{risk_reward_display} {rr_valid_icon}
+• Risk/Reward: {f"1:{risk_reward_display}" if rr_ratio != "-" else "-"}
 • Kelly:        {kelly_display}
 • Risk Level:  {risk_level}
 
