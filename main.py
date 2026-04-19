@@ -1837,9 +1837,15 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
     # Override for confidence-based status
     if confidence >= 60:
         copy_trade_status = "PENDING EXECUTION (Waiting Trigger)"
+        position_size_display = f"{position_size:,.6f}" if position_size and position_size > 0 else "-"
+        risk_reward_display = str(risk_metrics.get("risk_reward", 0))
+        risk_pct_val = risk_metrics.get("risk_pct", 0)
+        risk_pct_display = f"{risk_pct_val}%" if risk_pct_val > 0 else "-"
+        kelly_val = risk_metrics.get("kelly_pct", 0)
+        kelly_display = f"{kelly_val}%" if kelly_val > 0 else "-"
     elif confidence >= 40:
         copy_trade_status = "CONDITIONAL WATCHLIST"
-        position_size_display = f"{position_size:,.6f}"
+        position_size_display = f"{position_size:,.6f}" if position_size and position_size > 0 else "-"
         risk_reward_display = str(risk_metrics.get("risk_reward", 0))
         risk_pct_val = risk_metrics.get("risk_pct", 0)
         risk_pct_display = f"{risk_pct_val}%" if risk_pct_val > 0 else "-"
@@ -1898,6 +1904,7 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
     if 'rr_valid_icon' not in locals(): rr_valid_icon = "✗"
     if 'kelly_display' not in locals(): kelly_display = "-"
     if 'risk_level' not in locals(): risk_level = "LOW (Standby)"
+    if 'position_size_display' not in locals(): position_size_display = "-"
     # --------------------------------------------------------------------
 
     output = f"""📊 ANALISIS {symbol.upper()} | Data Quality: {data_quality_display}
