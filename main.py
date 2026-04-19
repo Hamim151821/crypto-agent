@@ -1686,9 +1686,11 @@ Sistem ini dalam status NO TRADE. DILARANG MERANCANG STRATEGI APAPUN. DILARANG M
 
 [STRICT LANGUAGE & VOCABULARY GUARDRAIL]
 Untuk penulisan narasi, terapkan pembatasan bahasa mutlak berikut:
-- Strict Indonesian & English Only: Gunakan bahasa Indonesia baku dan profesional. Istilah teknis trading boleh menggunakan bahasa Inggris murni (seperti Pullback, Support, Resistance).
-- Zero Foreign Vocabulary Mix: DILARANG KERAS menyisipkan kosakata, alfabet, atau encoding asing selain Inggris/Indonesia. Pastikan tidak ada kebocoran kata dari bahasa Vietnam, Rusia (Cyrillic), atau lainnya (contoh pelanggaran: "động thái", "диambil").
-- Tone Checker: Gunakan struktur kalimat analitis kuantitatif. Jika kekurangan variasi kata, gunakan sinonim bahasa Indonesia standar.
+- Strict Indonesian & English Only: Gunakan bahasa Indonesia baku. Istilah teknis trading boleh menggunakan bahasa Inggris murni.
+- Zero Foreign Vocabulary Mix: DILARANG KERAS menyisipkan kosakata, alfabet, atau encoding asing. Pastikan tidak ada kebocoran kata dari bahasa Vietnam, Rusia, atau lainnya.
+- Variable Rendering Guard: Saat merender variabel bahasa Inggris ke dalam kalimat bahasa Indonesia, DILARANG melakukan translasi otomatis (auto-translate) pada kata kerja bantu.
+- Explicit Fallback: Jika menjelaskan status variabel yang sedang berlangsung, HANYA gunakan kata penghubung bahasa Indonesia baku seperti: "sedang", "berada dalam fase", atau "menunjukkan kondisi". (Contoh Benar: "Aset sedang TRENDING DOWN").
+- Final Regex/Word Check: Sebelum menyajikan analisis, pastikan tidak ada karakter yang mengandung diakritik (seperti: đ, á, à, ả, ã, ạ, dsb). Jika terdeteksi, format ulang kalimat tersebut ke bahasa Indonesia baku.
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
 1. NEGATIVE PROMPT KHUSUS: DILARANG KERAS memunculkan frasa "rasio risiko-keuntungan", "R:R", "setiap unit risiko", "Take Profit", "Stop Loss", atau angka perbandingan rasio.
@@ -1718,9 +1720,11 @@ System Confidence: {confidence}%
 
 [STRICT LANGUAGE & VOCABULARY GUARDRAIL]
 Untuk penulisan narasi, terapkan pembatasan bahasa mutlak berikut:
-- Strict Indonesian & English Only: Gunakan bahasa Indonesia baku dan profesional. Istilah teknis trading boleh menggunakan bahasa Inggris murni (seperti Pullback, Support, Resistance).
-- Zero Foreign Vocabulary Mix: DILARANG KERAS menyisipkan kosakata, alfabet, atau encoding asing selain Inggris/Indonesia. Pastikan tidak ada kebocoran kata dari bahasa Vietnam, Rusia (Cyrillic), atau lainnya (contoh pelanggaran: "động thái", "диambil").
-- Tone Checker: Gunakan struktur kalimat analitis kuantitatif. Jika kekurangan variasi kata, gunakan sinonim bahasa Indonesia standar.
+- Strict Indonesian & English Only: Gunakan bahasa Indonesia baku. Istilah teknis trading boleh menggunakan bahasa Inggris murni.
+- Zero Foreign Vocabulary Mix: DILARANG KERAS menyisipkan kosakata, alfabet, atau encoding asing. Pastikan tidak ada kebocoran kata dari bahasa Vietnam, Rusia, atau lainnya.
+- Variable Rendering Guard: Saat merender variabel bahasa Inggris ke dalam kalimat bahasa Indonesia, DILARANG melakukan translasi otomatis (auto-translate) pada kata kerja bantu.
+- Explicit Fallback: Jika menjelaskan status variabel yang sedang berlangsung, HANYA gunakan kata penghubung bahasa Indonesia baku seperti: "sedang", "berada dalam fase", atau "menunjukkan kondisi". (Contoh Benar: "Aset sedang TRENDING DOWN").
+- Final Regex/Word Check: Sebelum menyajikan analisis, pastikan tidak ada karakter yang mengandung diakritik (seperti: đ, á, à, ả, ã, ạ, dsb). Jika terdeteksi, format ulang kalimat tersebut ke bahasa Indonesia baku.
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
 1. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA alfabet Latin (A-Z). WAJIB gunakan tanda titik (.) sebagai pemisah desimal. DILARANG menyebut variabel backend (seperti "Sinyal Internal").
