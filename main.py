@@ -47,8 +47,9 @@ def get_crypto_price(nama_crypto):
         "vs_currencies": "idr,usd",
         "include_24hr_change": "true"
     }
+    headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, headers=headers, timeout=10)
         data = response.json()
         
         # Validasi response
@@ -337,7 +338,8 @@ def get_crypto_indicators(nama_crypto):
         url = f"https://api.coingecko.com/api/v3/coins/{nama_crypto}/market_chart"
         # Ambil 300 hari untuk MA200
         params = {"vs_currency": "usd", "days": "300", "interval": "daily"}
-        response = requests.get(url, params=params, timeout=30)
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, params=params, headers=headers, timeout=30)
         data = response.json()
         
         # Validasi response
