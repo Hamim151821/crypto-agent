@@ -1297,11 +1297,16 @@ def calculate_score(indikator, sentimen, weights, market_condition, trend_direct
         trend_status = indikator.get("trend_status", "NEUTRAL")
         scores["trend"] = 3 if trend_status == "BULLISH" else -3 if trend_status == "BEARISH" else 0
     
-    # Volume Score — SMART LOGIC
+    # Volume Score — SMART LOGIC with Exhaustion Check
     volume_status = indikator.get("volume_status", "NORMAL")
     direction = scores["macd"] + scores["trend"]
-    
-    if volume_status == "TINGGI":
+    rsi_status = indikator.get("rsi_status", "NORMAL")
+    bb_position = indikator.get("bb_position", "")
+
+    # Penalti untuk exhaustion: Jika OVERBOUGHT atau UPPER BAND + Volume Tinggi
+    if (rsi_status == "OVERBOUGHT" or "UPPER BAND" in bb_position) and volume_status == "TINGGI":
+        scores["volume"] = -1  # Exhaustion/distribution signal
+    elif volume_status == "TINGGI":
         if direction > 0:
             scores["volume"] = 1   # Konfirmasi searah trend
         elif direction < 0:
@@ -1787,6 +1792,29 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
                             market_condition, skor_detail, weights, jenis, no_trade,
                             is_early_entry=False, risk_metrics=None, data_quality=None):
     """Format output sesuai template 10-point system"""
+
+    # --- DEFENSIVE INITIALIZATION (Global/Local) ---
+    # Initialize all display variables with defaults to prevent undefined errors
+    entry_display = "-"
+    sl_display = "-"
+    tp_display = "-"
+    rr_ratio = "-"
+    risk_reward_display = "-"
+    risk_pct_display = "-"
+    kelly_display = "-"
+    position_size_display = "-"
+    risk_level = "LOW"
+    copy_trade_status = "NO TRADE"
+
+    # --- SEPARATE CALCULATION BLOCK (Independent from Formatting Branches) ---
+    # Calculate R:R and Position Sizing ONLY IF Entry, SL, TP are valid and > 0
+    if entry > 0 and sl > 0 and tp > 0 and risk_metrics:
+        rr_ratio = f"{risk_metrics.get('risk_pct', 0)}%" if risk_metrics.get('risk_pct', 0) > 0 else "-"
+        risk_reward_display = str(risk_metrics.get('risk_reward', 0)) if risk_metrics.get('risk_reward', 0) > 0 else "-"
+        risk_pct_display = rr_ratio
+        kelly_display = f"{risk_metrics.get('kelly_pct', 0)}%" if risk_metrics.get('kelly_pct', 0) > 0 else "-"
+        position_size_display = f"{position_size:,.6f}" if position_size > 0 else "-"
+        risk_level = "MEDIUM"  # Default, can be overridden
 
     # --- EARLY GLOBAL PATCH (UI SYNC) ---
     # 1. OBV Patch (Mencegah teks NONE muncul di laporan)
