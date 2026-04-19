@@ -1084,6 +1084,9 @@ def analyze_news(berita, symbol):
 Berita:
 {headlines}
 
+ATURAN KALIBRASI SENTIMEN (WAJIB):
+Jika berita hanya mengevaluasi kondisi makro atau sentimen tidak langsung, Anda JANGAN paksa skor menjadi Positif/Negatif. Default ke status NETRAL (Skor 0.0) KECUALI berita tesebut memuat sentimen laba/rugi absolut atau dampak korporasi ekstrim terbaru.
+
 JAWAB HANYA dalam format JSON (tanpa markdown, tanpa penjelasan tambahan):
 {{"status": "POSITIF/NETRAL/NEGATIF", "skor": <float -1.0 sampai 1.0>, "dampak": "<dampak ke harga dalam 1 kalimat>"}}"""
     
@@ -1683,9 +1686,10 @@ Sistem ini dalam status NO TRADE. DILARANG MERANCANG STRATEGI APAPUN. DILARANG M
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
 1. NEGATIVE PROMPT KHUSUS: DILARANG KERAS memunculkan frasa "rasio risiko-keuntungan", "R:R", "setiap unit risiko", "Take Profit", "Stop Loss", atau angka perbandingan rasio.
-2. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA gunakan alfabet Latin (A-Z). WAJIB gunakan titik (.) pemisah desimal. DILARANG keras aksara asing. DILARANG menyebut nama variabel backend (seperti "Edge Clarity"). Anda analis independen.
+2. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA gunakan alfabet Latin. WAJIB gunakan titik (.) pemisah desimal. DILARANG KERAS memakai frasa yang mengindikasikan persiapan aksi (seperti "mencari pijakan", "bersiap", atau "menunggu konfirmasi eksekusi"). Gunakan observasi murni: "Potensi pullback masih dalam tahap awal dan belum tervalidasi. Belum ada konfirmasi untuk valid setup."
 3. BIND SINYAL DISPLAY: Status saat ini adalah "{nama_sinyal_tabel}". Jika Anda menyebut status, Anda WAJIB menggunakan frasa "{nama_sinyal_tabel}" secara sama persis 100%. Jangan pernah diubah menjadi sinonim seperti "Neutral Watch" atau "Low Prio".
 4. KALIMAT PERTAMA WAJIB langsung mengutip isi dari 'Analisis Mendalam' (jika ada) atau status Tren makro. Jangan pernah memotong kalimat.
+5. INSIGHT EXTRACTION (KONTRADIKSI DATA): Jika ada kontradiksi data (misal: Tren Bearish KUAT tapi MACD Bullish & Stochastic Oversold), Anda WAJIB merangkumnya sebagai "Early Pullback Signal" atau "Divergensi Awal". Jelaskan bahwa ini adalah anomali yang perlu diawasi.
 """
     else:
         # STRATEGI ACTIONABLE (Confidence >= 40)
@@ -1707,11 +1711,12 @@ System Confidence: {confidence}%
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
-1. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA alfabet Latin (A-Z). WAJIB gunakan tanda titik (.) sebagai pemisah desimal, BUKAN koma (contoh: 272.30, bukan 272,30). DILARANG menyebut nama variabel backend (seperti "Sinyal Internal") dalam narasi. Anda analis murni.
-2. BIND SINYAL DISPLAY: Status saat ini adalah "{nama_sinyal_tabel}". Anda WAJIB menggunakan frasa "{nama_sinyal_tabel}" persis 100%. JANGAN GANTI dengan frasa "Neutral Watch" dsb.
+1. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA alfabet Latin (A-Z). WAJIB gunakan tanda titik (.) sebagai pemisah desimal. DILARANG menyebut variabel backend (seperti "Sinyal Internal").
+2. BIND SINYAL DISPLAY: Status saat ini adalah "{nama_sinyal_tabel}". Anda WAJIB menggunakan frasa "{nama_sinyal_tabel}" persis 100%.
 3. ACTION PLAN WAJIB: Anda WAJIB mengutip format Action Plan secara LENGKAP (Strategi, TP, SL, R:R). Jangan biarkan narasi gantung tanpa strategi ini.
 4. CONFIDENCE RULE: {conf_rule}
 5. KALIMAT PERTAMA WAJIB mengutip isi dari 'Analisis Mendalam' atau status Tren makro.
+6. INSIGHT EXTRACTION (KONTRADIKSI DATA): Jika ada kontradiksi data (misal: Tren Bearish KUAT tapi MACD Bullish & Stochastic Oversold), Anda WAJIB merangkumnya sebagai "Early Pullback Signal" atau "Divergensi Awal". Jelaskan bahwa ini adalah anomali yang perlu diawasi.
 """
 
     try:
