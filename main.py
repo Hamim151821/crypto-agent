@@ -1806,6 +1806,9 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
     risk_level = "LOW"
     copy_trade_status = "NO TRADE"
 
+    # Defensive initialization for is_trade to prevent UnboundLocalError
+    is_trade = False
+
     # --- SEPARATE CALCULATION BLOCK (Independent from Formatting Branches) ---
     # Calculate R:R and Position Sizing ONLY IF Entry, SL, TP are valid and > 0
     if entry > 0 and sl > 0 and tp > 0 and risk_metrics:
@@ -1937,8 +1940,15 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
         kelly_display = "-"
         sl_display = "-"
     else:
-        is_trade = "BUY" in sinyal or "SELL" in sinyal
+        is_trade = "BUY" in sinyal.upper() or "SELL" in sinyal.upper()
         copy_trade_status = "OPEN" if is_trade else "NO TRADE"
+
+        # Set displays for trade setups
+        if is_trade:
+            position_size_display = f"{position_size:,.6f}" if position_size > 0 else "-"
+            risk_reward_display = str(risk_metrics.get("risk_reward", 0)) if risk_metrics.get("risk_reward", 0) > 0 else "-"
+            risk_pct_display = rr_ratio
+            kelly_display = f"{risk_metrics.get('kelly_pct', 0)}%" if risk_metrics.get('kelly_pct', 0) > 0 else "-"
 
     # Set displays for trade setups
     if is_trade:
