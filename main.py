@@ -1,4 +1,4 @@
-﻿from openai import OpenAI
+from openai import OpenAI
 import requests
 from dotenv import load_dotenv
 import os
@@ -1668,32 +1668,50 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
         
     vol_context = "Volume transaksi yang sepi menandakan market belum siap breakout." if "RENDAH" in vol_str or ("NORMAL" in vol_str and adx < 20) else ""
         
-    if confidence == 0 or "IGNORE" in sinyal.upper() or "HOLD" in sinyal.upper():
-        branching_rules = "2. ANTI-HALLUCINATION WAJIB: Status adalah NO TRADE atau IGNORE. Narasi HANYA boleh menjelaskan mengapa kriteria tidak terpenuhi. DILARANG KERAS menyebutkan angka Risk/Reward (R:R), persentase keuntungan, kalimat penjelasan R:R, Take Profit, atau Stop Loss. Dilarang memunculkan frasa kontradiktif seperti 'System Confidence tinggi'."
-    elif confidence < 50:
-        branching_rules = "2. JIKA Confidence < 50%: WAJIB cantumkan kalimat: 'Sistem belum memiliki keyakinan yang cukup untuk eksekusi, sehingga aksi hanya sebatas pemantauan (Watchlist)'. DILARANG KERAS menggunakan frasa 'keyakinan yang cukup untuk melakukan aksi'."
-    elif confidence < 60:
-        branching_rules = "2. JIKA Confidence < 60%: DILARANG KERAS menggunakan frasa 'keyakinan yang cukup untuk melakukan aksi' karena status belum READY/EXECUTE."
-    else:
-        branching_rules = "2. JIKA Confidence > 60%: WAJIB berikan kalimat penjelas eksplisit di akhir paragraf mengapa angka tersebut tinggi (berdasarkan konfluensi indikator, dll)."
+    is_no_trade = (confidence < 40 or "IGNORE" in sinyal.upper() or "HOLD" in sinyal.upper() or rr_ratio == "-")
 
-    prompt = f"""Sebagai AI Quant Trader tingkat lanjut, buat laporan eksekusi untuk {symbol}.
+    if is_no_trade:
+        # HARD NARRATIVE OVERRIDE UNTUK NO-TRADE
+        prompt = f"""Sebagai AI Quant Trader tingkat lanjut, buat laporan eksekusi untuk {symbol}.
 
 [DATA KUANTITATIF]
 Tren Makro: {market_condition} | Kekuatan Tren: {adx_desc} (ADX: {adx:.1f})
 Analisis Mendalam: {kondisi_harga} {vol_context}
-Status Sistem (Edge Clarity): {edge_clarity} | System Confidence: {confidence}%
-Sinyal Internal: {sinyal}
-Nama Sinyal Tampilan: {nama_sinyal_tabel}
+System Confidence: {confidence}% (Belum layak eksekusi)
+
+Sistem ini dalam status NO TRADE. DILARANG MERANCANG STRATEGI APAPUN. DILARANG MENYEBUTKAN ENTRY, TARGET, ATAU RISK/REWARD (R:R). Fokuskan 100% narasi pada analisis tren mengapa pasar belum layak ditransaksikan.
+
+ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
+1. NEGATIVE PROMPT KHUSUS: DILARANG KERAS memunculkan frasa "rasio risiko-keuntungan", "R:R", "setiap unit risiko", "Take Profit", "Stop Loss", atau angka perbandingan rasio.
+2. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA gunakan alfabet Latin (A-Z) murni. DILARANG KERAS memakai aksara Sirilik (Cyrillic), Arab, atau bahasa asing. DILARANG menyebut nama variabel backend (seperti "Sinyal Internal", "Edge Clarity") dalam narasi. Anda adalah analis profesional.
+3. BIND SINYAL DISPLAY: Status saat ini adalah "{nama_sinyal_tabel}". Jika Anda menyebut status, Anda WAJIB menggunakan frasa "{nama_sinyal_tabel}" secara sama persis 100%. Jangan pernah diubah menjadi sinonim seperti "Neutral Watch" atau "Low Prio".
+4. KALIMAT PERTAMA WAJIB langsung mengutip isi dari 'Analisis Mendalam' (jika ada) atau status Tren makro. Jangan pernah memotong kalimat.
+"""
+    else:
+        # STRATEGI ACTIONABLE (Confidence >= 40)
+        if confidence < 50:
+            conf_rule = "WAJIB cantumkan kalimat: 'Sistem belum memiliki keyakinan yang cukup untuk eksekusi, sehingga aksi hanya sebatas pemantauan (Watchlist)'. DILARANG KERAS menggunakan frasa 'keyakinan yang cukup untuk melakukan aksi'."
+        elif confidence < 60:
+            conf_rule = "DILARANG KERAS menggunakan frasa 'keyakinan yang cukup untuk melakukan aksi' karena status masih belum READY/EXECUTE."
+        else:
+            conf_rule = "WAJIB berikan kalimat penjelas eksplisit di akhir paragraf mengapa angka probabilitas ini tinggi berdasarkan indikator."
+
+        prompt = f"""Sebagai AI Quant Trader tingkat lanjut, buat laporan eksekusi untuk {symbol}.
+
+[DATA KUANTITATIF]
+Tren Makro: {market_condition} | Kekuatan Tren: {adx_desc} (ADX: {adx:.1f})
+Analisis Mendalam: {kondisi_harga} {vol_context}
+System Confidence: {confidence}%
 
 [ACTION PLAN LENGKAP]
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
-1. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA gunakan alfabet Latin (A-Z). DILARANG KERAS memakai aksara Sirilik (Cyrillic) atau bahasa asing! DILARANG KERAS menyebutkan nama variabel backend (seperti "Sinyal Internal", "Edge Clarity", "Confidence Tinggi") dalam narasi. Anda adalah analis profesional, sampaikan secara natural. Nama sinyal = "{nama_sinyal_tabel}".
-{branching_rules}
-3. JIKA Status bukan NO TRADE: Anda WAJIB mengutip format Action Plan secara LENGKAP (Strategi, TP, SL, R:R). 
-4. KALIMAT PERTAMA WAJIB langsung mengutip isi dari 'Analisis Mendalam' (jika ada) atau status Tren makro. JANGAN PERNAH MEMOTONG KALIMAT DI TENGAH JALAN.
+1. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA gunakan alfabet Latin (A-Z) murni. DILARANG keras memakai aksara Sirilik atau bahasa asing. DILARANG menyebut nama variabel backend (seperti "Sinyal Internal") dalam narasi. Anda adalah analis profesional.
+2. BIND SINYAL DISPLAY: Status saat ini adalah "{nama_sinyal_tabel}". Anda WAJIB menggunakan frasa "{nama_sinyal_tabel}" persis 100%. JANGAN GANTI dengan frasa "Neutral Watch" dsb.
+3. ACTION PLAN WAJIB: Anda WAJIB mengutip format Action Plan secara LENGKAP (Strategi, TP, SL, R:R). Jangan biarkan narasi gantung tanpa strategi ini.
+4. CONFIDENCE RULE: {conf_rule}
+5. KALIMAT PERTAMA WAJIB mengutip isi dari 'Analisis Mendalam' atau status Tren makro.
 """
 
     try:
