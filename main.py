@@ -560,7 +560,14 @@ def get_crypto_indicators(nama_crypto):
         
         # Data quality score
         data_quality = min(100, (len(prices) / 300) * 100) if len(prices) < 300 else 100
-        
+
+        # Data Sanity Check (Price)
+        recent_prices = prices[-10:] if len(prices) >= 10 else prices
+        price_range_pct = (max(recent_prices) - min(recent_prices)) / sum(recent_prices)/len(recent_prices) * 100 if recent_prices else 0
+        data_sanity_warning = None
+        if price_range_pct < 1.0:  # If price movement < 1%, may be stale data
+            data_sanity_warning = f"Warning: Price range only {price_range_pct:.2f}%, data may be stale or not reflecting recent market activity."
+
         return {
             "rsi": rsi,
             "rsi_status": rsi_status,
@@ -607,7 +614,8 @@ def get_crypto_indicators(nama_crypto):
             "obv_prev": round(obv_prev, 2) if obv_prev is not None else 0,
             "obv_divergence": obv_divergence,
             # Data quality
-            "data_quality": data_quality
+            "data_quality": data_quality,
+            "data_sanity_warning": data_sanity_warning
         }
     except Exception as e:
         print(f"⚠️ Error crypto indicators: {e}")
@@ -842,7 +850,14 @@ def get_stock_indicators(kode_saham):
         
         # Data quality score
         data_quality = min(100, (len(df) / 252) * 100) if len(df) < 252 else 100
-        
+
+        # Data Sanity Check (Price)
+        recent_prices = df["close"].tail(10) if len(df) >= 10 else df["close"]
+        price_range_pct = (recent_prices.max() - recent_prices.min()) / recent_prices.mean() * 100 if recent_prices.mean() > 0 else 0
+        data_sanity_warning = None
+        if price_range_pct < 1.0:  # If price movement < 1%, may be stale data or no activity
+            data_sanity_warning = f"Warning: Price range only {price_range_pct:.2f}%, data may be stale or not adjusted for corporate actions (e.g., stock split)."
+
         return {
             "rsi": rsi,
             "rsi_status": rsi_status,
@@ -889,7 +904,8 @@ def get_stock_indicators(kode_saham):
             "obv_prev": round(obv_prev, 2) if obv_prev is not None else 0,
             "obv_divergence": obv_divergence,
             # Data quality
-            "data_quality": data_quality
+            "data_quality": data_quality,
+            "data_sanity_warning": data_sanity_warning
         }
     except Exception as e:
         print(f"⚠️ Error stock indicators: {e}")
@@ -1070,10 +1086,32 @@ def analyze_news(berita, symbol):
         })
     
     # Deteksi berita BESAR yang mempengaruhi sentimen
-    big_news_keywords = [' wafat', 'meninggal', 'died', 'passed away', 'ceo resign', 'resign', 
+    big_news_keywords = [' wafat', 'meninggal', 'died', 'passed away', 'ceo resign', 'resign',
                        'peraturan', 'regulation', 'ban', 'prohibited', 'geopolitik', 'war',
                        'scandal', 'fraud', 'investigation', 'akuisisi', 'merger']
-    
+
+    # Aturan validasi berlapis untuk sentimen tokoh kunci (Fix NLP Context)
+    fatal_keywords = ['meninggal', 'dies', 'wafat', 'passed away', 'kasus hukum', 'legal case', 'arrest', 'indictment']
+    key_persons = {
+        'BBCA.JK': ['bambang hartono', 'hartono', 'djarum', 'bca founder'],
+        'BBRI.JK': ['budi sadikin', 'bri founder'],
+        'ASII.JK': ['sukanto tanoto', 'astra founder'],
+        # Tambahkan key persons lainnya sesuai kebutuhan
+    }
+
+    has_fatal_news = False
+    for b in top_berita:
+        judul_lower = b.get('judul', '').lower()
+        # Cek fatal keywords
+        if any(kw in judul_lower for kw in fatal_keywords):
+            has_fatal_news = True
+            break
+        # Cek key persons untuk saham terkait
+        if symbol_upper in key_persons:
+            if any(person in judul_lower for person in key_persons[symbol_upper]):
+                has_fatal_news = True
+                break
+
     has_big_news = any(any(kw in b.get('judul', '').lower() for kw in big_news_keywords) for b in top_berita)
     
     # Override dampak jika hanya berita makro
@@ -1113,10 +1151,19 @@ JAWAB HANYA dalam format JSON (tanpa markdown, tanpa penjelasan tambahan):
                 status = "NETRAL"
             skor = max(-1.0, min(1.0, float(parsed.get("skor", 0))))
             dampak = str(parsed.get("dampak", "Tidak ada dampak signifikan"))
-            
+
             # Override jika hanya berita makro
             if makro_override:
                 dampak = makro_override
+
+            # Override sentimen untuk berita fatal tokoh kunci (NLP Context Fix)
+            if has_fatal_news:
+                status = "NEGATIF"
+                skor = -0.8  # High penalty score
+                dampak = "Dampak langsung negatif ke harga saham akibat insiden tokoh kunci"
+                # Update label berita menjadi LANGSUNG
+                for b in labeled_berita:
+                    b["label"] = "LANGSUNG"
             
             return {
                 "berita_label": labeled_berita,
@@ -1262,18 +1309,9 @@ def calculate_score(indikator, sentimen, weights, market_condition, trend_direct
     else:
         scores["volume"] = 0
     
-    # Sentimen Score (Micro-Tuning)
-    sentimen_skor = sentimen.get("skor", 0)
-    if sentimen_skor >= 0.7:
-        scores["sentimen"] = 2
-    elif sentimen_skor >= 0.3:
-        scores["sentimen"] = 1
-    elif sentimen_skor <= -0.7:
-        scores["sentimen"] = -2
-    elif sentimen_skor <= -0.3:
-        scores["sentimen"] = -1
-    else:
-        scores["sentimen"] = 0
+    # Sentimen Score (Strict Variable Binding - use actual skor value)
+    sentimen_skor = sentimen.get("skor", 0.0)
+    scores["sentimen"] = sentimen_skor  # Use actual float value instead of discrete
     
     # === TREND DOMINANCE RULE ===
     # Jika indikator melawan trend dengan volume tinggi → kurangi skor -1
@@ -1603,11 +1641,15 @@ def calculate_data_quality(indikator, berita):
     
     score = min(100, score)
     
+    # Add data sanity warning if present
+    if indikator and indikator.get("data_sanity_warning"):
+        warnings.append(indikator["data_sanity_warning"])
+
     # Determine grade with warning
     grade = "A" if score >= 80 else "B" if score >= 60 else "C" if score >= 40 else "D"
     if warnings:
         grade = f"WARNING ({grade})"
-    
+
     return {
         "quality_score": score,
         "quality_grade": grade,
@@ -1640,13 +1682,20 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
             kondisi_harga = "Market Sideways dengan tekanan Bearish dominan (OBV Distribusi). Peluang terbaik adalah SELL di resistance."
         elif "UP" in market_condition and "ACCUMULATION" in obv_str:
             kondisi_harga = "Market Sideways dengan sokongan Bullish (OBV Akumulasi). Peluang terbaik adalah BUY di support."
-    else: 
+    else:
         if "DOWN" in market_condition:
             if rsi >= 70 or "OVERBOUGHT" in stoch_str:
                 kondisi_harga = "Harga mengalami Counter-Trend Rally (Overbought). Ini memperkuat probabilitas setup SELL ON RALLY di resistance."
             elif total_skor > -3:
-                # Logika Pullback Klasik
-                kondisi_harga = "Tren utama Bearish, namun momentum jangka pendek sedang naik. Ini adalah fase PULLBACK (Counter-Trend Rally), momentum ideal untuk mencari pijakan SELL ON RALLY di area resistance."
+                # Fix Evaluasi Indikator Stochastic: Periksa %K vs %D
+                stoch_k = float(indikator.get("stoch_k", 50))
+                stoch_d = float(indikator.get("stoch_d", 50))
+                stoch_status = indikator.get("stoch_status", "NORMAL")
+                if stoch_k < stoch_d and (rsi <= 30 or "OVERSOLD" in stoch_status):
+                    kondisi_harga = "Harga masih menukik di area oversold dan belum mengonfirmasi pembalikan arah. Momentum jangka pendek belum cukup kuat untuk dianggap pullback."
+                else:
+                    # Logika Pullback Klasik
+                    kondisi_harga = "Tren utama Bearish, namun momentum jangka pendek sedang naik. Ini adalah fase PULLBACK (Counter-Trend Rally), momentum ideal untuk mencari pijakan SELL ON RALLY di area resistance."
         elif "UP" in market_condition:
             if rsi <= 30 or "OVERSOLD" in stoch_str:
                 kondisi_harga = "Harga terkoreksi (Oversold). Ini memperkuat probabilitas setup BUY ON DIP di support."
