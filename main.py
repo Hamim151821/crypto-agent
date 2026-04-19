@@ -1684,6 +1684,12 @@ System Confidence: {confidence}% (Belum layak eksekusi)
 
 Sistem ini dalam status NO TRADE. DILARANG MERANCANG STRATEGI APAPUN. DILARANG MENYEBUTKAN ENTRY, TARGET, ATAU RISK/REWARD (R:R). Fokuskan 100% narasi pada analisis tren mengapa pasar belum layak ditransaksikan.
 
+[STRICT LANGUAGE & VOCABULARY GUARDRAIL]
+Untuk penulisan narasi, terapkan pembatasan bahasa mutlak berikut:
+- Strict Indonesian & English Only: Gunakan bahasa Indonesia baku dan profesional. Istilah teknis trading boleh menggunakan bahasa Inggris murni (seperti Pullback, Support, Resistance).
+- Zero Foreign Vocabulary Mix: DILARANG KERAS menyisipkan kosakata, alfabet, atau encoding asing selain Inggris/Indonesia. Pastikan tidak ada kebocoran kata dari bahasa Vietnam, Rusia (Cyrillic), atau lainnya (contoh pelanggaran: "động thái", "диambil").
+- Tone Checker: Gunakan struktur kalimat analitis kuantitatif. Jika kekurangan variasi kata, gunakan sinonim bahasa Indonesia standar.
+
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
 1. NEGATIVE PROMPT KHUSUS: DILARANG KERAS memunculkan frasa "rasio risiko-keuntungan", "R:R", "setiap unit risiko", "Take Profit", "Stop Loss", atau angka perbandingan rasio.
 2. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA gunakan alfabet Latin. WAJIB gunakan titik (.) pemisah desimal. DILARANG KERAS memakai frasa yang mengindikasikan persiapan aksi (seperti "mencari pijakan", "bersiap", atau "menunggu konfirmasi eksekusi"). Gunakan observasi murni: "Potensi pullback masih dalam tahap awal dan belum tervalidasi. Belum ada konfirmasi untuk valid setup."
@@ -1709,6 +1715,12 @@ System Confidence: {confidence}%
 
 [ACTION PLAN LENGKAP]
 {next_trade_plan}
+
+[STRICT LANGUAGE & VOCABULARY GUARDRAIL]
+Untuk penulisan narasi, terapkan pembatasan bahasa mutlak berikut:
+- Strict Indonesian & English Only: Gunakan bahasa Indonesia baku dan profesional. Istilah teknis trading boleh menggunakan bahasa Inggris murni (seperti Pullback, Support, Resistance).
+- Zero Foreign Vocabulary Mix: DILARANG KERAS menyisipkan kosakata, alfabet, atau encoding asing selain Inggris/Indonesia. Pastikan tidak ada kebocoran kata dari bahasa Vietnam, Rusia (Cyrillic), atau lainnya (contoh pelanggaran: "động thái", "диambil").
+- Tone Checker: Gunakan struktur kalimat analitis kuantitatif. Jika kekurangan variasi kata, gunakan sinonim bahasa Indonesia standar.
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
 1. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA alfabet Latin (A-Z). WAJIB gunakan tanda titik (.) sebagai pemisah desimal. DILARANG menyebut variabel backend (seperti "Sinyal Internal").
