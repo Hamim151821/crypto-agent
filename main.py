@@ -1,4 +1,4 @@
-﻿from openai import OpenAI
+from openai import OpenAI
 import requests
 from dotenv import load_dotenv
 import os
@@ -1692,6 +1692,10 @@ Untuk penulisan narasi, terapkan pembatasan bahasa mutlak berikut:
 - Explicit Fallback: Jika menjelaskan status variabel yang sedang berlangsung, HANYA gunakan kata penghubung bahasa Indonesia baku seperti: "sedang", "berada dalam fase", atau "menunjukkan kondisi". (Contoh Benar: "Aset sedang TRENDING DOWN").
 - Final Regex/Word Check: Sebelum menyajikan analisis, pastikan tidak ada karakter yang mengandung diakritik (seperti: đ, á, à, ả, ã, ạ, dsb). Jika terdeteksi, format ulang kalimat tersebut ke bahasa Indonesia baku.
 
+[ANTI-LAZINESS & FULL VERBOSITY ENFORCEMENT]
+DILARANG KERAS menyingkat kalimat, memotong penjelasan di tengah jalan, atau memakai placeholder. Jawab dengan narasi yang utuh dan komprehensif. Selesaikan semua kalimat pengamatan sebelum pindah ke poin lain.
+
+
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
 1. NEGATIVE PROMPT KHUSUS: DILARANG KERAS memunculkan frasa "rasio risiko-keuntungan", "R:R", "setiap unit risiko", "Take Profit", "Stop Loss", atau angka perbandingan rasio.
 2. ZERO TOLERANCE FOR COMMA DECIMALS: Anda DIWAJIBKAN 100% menggunakan tanda titik (.) sebagai pemisah desimal saat mengutip angka (Contoh: tulis 15.6, BUKAN 15,6). Blokir total penggunaan format desimal lokal dengan koma.
@@ -1727,6 +1731,10 @@ Untuk penulisan narasi, terapkan pembatasan bahasa mutlak berikut:
 - Explicit Fallback: Jika menjelaskan status variabel yang sedang berlangsung, HANYA gunakan kata penghubung bahasa Indonesia baku seperti: "sedang", "berada dalam fase", atau "menunjukkan kondisi". (Contoh Benar: "Aset sedang TRENDING DOWN").
 - Final Regex/Word Check: Sebelum menyajikan analisis, pastikan tidak ada karakter yang mengandung diakritik (seperti: đ, á, à, ả, ã, ạ, dsb). Jika terdeteksi, format ulang kalimat tersebut ke bahasa Indonesia baku.
 
+[ANTI-LAZINESS & FULL VERBOSITY ENFORCEMENT]
+DILARANG KERAS menyingkat kalimat, memotong penjelasan di tengah jalan, atau memakai placeholder. Jawab dengan narasi yang utuh dan komprehensif. Selesaikan penjelasan indikator secara logis sebelum berpindah ke rincian Action Plan.
+
+
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
 1. ZERO TOLERANCE FOR COMMA DECIMALS: Anda DIWAJIBKAN 100% menggunakan tanda titik (.) sebagai pemisah desimal saat mengutip angka (Contoh: tulis 15.6, BUKAN 15,6). Blokir total penggunaan format desimal lokal dengan koma.
 2. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA alfabet Latin (A-Z). DILARANG menyebut variabel backend (seperti "Sinyal Internal").
@@ -1746,7 +1754,7 @@ ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
         result = response.choices[0].message.content
         # Proteksi keamanan ganda jika result terpotong
         if not result.endswith((".", "!", "?")):
-            result += f"... [Teks terpotong]. Detail Plan: {next_trade_plan}"
+            result += f"\n\nDetail Plan: {next_trade_plan}"
             
         return result.strip() if result else f"[Sistem Otomatis]\n{next_trade_plan}"
     except Exception as e:
