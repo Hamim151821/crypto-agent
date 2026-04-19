@@ -1901,7 +1901,17 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
         else:
             copy_trade_status = "OPEN" if is_trade else "NO TRADE"
             
-        position_size_display = f"{position_size:,.6f}" if position_size and float(position_size) > 0 else "-"
+        if position_size and float(position_size) > 0:
+            if symbol.endswith(".JK"):
+                lot_size = max(1, int(float(position_size) / 100))
+                position_size_display = f"{lot_size:,.0f} Lot"
+            elif jenis == "Crypto" or "-USD" in symbol.upper():
+                base_coin = symbol.replace("-USD", "")
+                position_size_display = f"{float(position_size):,.4f} {base_coin}"
+            else:
+                position_size_display = f"{float(position_size):,.4f} Lembar"
+        else:
+            position_size_display = "-"
         risk_reward_display = str(risk_metrics.get("risk_reward", 0))
         risk_pct_val = round(risk_metrics.get("risk_pct", 0), 1)
         
