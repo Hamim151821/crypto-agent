@@ -1731,7 +1731,7 @@ ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
 1. ZERO TOLERANCE FOR COMMA DECIMALS: Anda DIWAJIBKAN 100% menggunakan tanda titik (.) sebagai pemisah desimal saat mengutip angka (Contoh: tulis 15.6, BUKAN 15,6). Blokir total penggunaan format desimal lokal dengan koma.
 2. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA alfabet Latin (A-Z). DILARANG menyebut variabel backend (seperti "Sinyal Internal").
 3. BIND SINYAL DISPLAY: Status saat ini adalah "{nama_sinyal_tabel}". Anda WAJIB menggunakan frasa "{nama_sinyal_tabel}" persis 100%.
-4. ACTION PLAN WAJIB: Anda WAJIB mengutip format Action Plan secara LENGKAP (Strategi, TP, SL, R:R). Jangan biarkan narasi gantung tanpa strategi ini.
+4. ACTION PLAN WAJIB: Anda WAJIB mengutip format Action Plan secara LENGKAP. Pertahankan format penulisan rincian menggunakan bullet points atau dashes vertikal yang bersih (contoh: - TP: ..., - SL: ...) agar mudah dibaca di UI. Jangan biarkan narasi gantung tanpa strategi ini.
 5. CONFIDENCE RULE: {conf_rule}
 6. BAN ROBOTIC INTRODUCTIONS: DILARANG menggunakan kalimat pembuka kaku seperti "Berikut adalah laporan..." atau "Berdasarkan analisis...". Anda WAJIB langsung masuk ke inti poin analitis secara profesional (Contoh: "Tren makro {symbol} saat ini sedang berada dalam fase...").
 6. INSIGHT EXTRACTION (KONTRADIKSI DATA): Jika ada kontradiksi data (misal: Tren Bearish KUAT tapi MACD Bullish & Stochastic Oversold), Anda WAJIB merangkumnya sebagai "Early Pullback Signal" atau "Divergensi Awal". Jelaskan bahwa ini adalah anomali yang perlu diawasi.
@@ -1740,7 +1740,7 @@ ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
     try:
         response = client.chat.completions.create(
             model="meta-llama/llama-3.3-70b-instruct",
-            max_tokens=600, # Diperbesar agar LLM tidak kehabisan napas
+            max_tokens=1500, # Diperbesar agar AI bisa merender full output tanpa terpotong di tengah jalan
             messages=[{"role": "user", "content": prompt}]
         )
         result = response.choices[0].message.content
