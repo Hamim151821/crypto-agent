@@ -1887,7 +1887,19 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
     
     # Validasi RR
     rr_valid_icon = "✓" if risk_metrics.get("is_valid_rr", False) else "✗"
-    
+
+    # --- SAFETY NET: MENCEGAH UNBOUND LOCAL ERROR SAAT HOLD/NO TRADE ---
+    if 'entry_display' not in locals(): entry_display = "-"
+    if 'sl_display' not in locals(): sl_display = "-"
+    if 'risk_pct_display' not in locals(): risk_pct_display = "-"
+    if 'tp_display' not in locals(): tp_display = "-"
+    if 'rr_ratio' not in locals(): rr_ratio = "-"
+    if 'risk_reward_display' not in locals(): risk_reward_display = "-"
+    if 'rr_valid_icon' not in locals(): rr_valid_icon = "✗"
+    if 'kelly_display' not in locals(): kelly_display = "-"
+    if 'risk_level' not in locals(): risk_level = "LOW (Standby)"
+    # --------------------------------------------------------------------
+
     output = f"""📊 ANALISIS {symbol.upper()} | Data Quality: {data_quality_display}
 💰 Harga: {harga_display}
 🏪 Market: {market_condition} | ADX: {adx} ({adx_status})
