@@ -1543,7 +1543,7 @@ def calculate_data_quality(indikator, berita):
         if indikator.get("adx", 0) > 0:
             indicator_score += 10
         
-        indicator_score = min(80, indicator_score)
+        indicator_score = round(min(80, indicator_score), 1)
         score += indicator_score
         details.append(f"Indikator: {indicator_score}%")
         
@@ -1580,7 +1580,7 @@ def calculate_data_quality(indikator, berita):
     if berita:
         news_score = min(30, len(berita) * 10)
         score += news_score
-        details.append(f"Berita: {news_score}%")
+        details.append(f"Berita: {round(news_score, 1)}%")
     else:
         details.append("Berita: 0%")
     
@@ -1591,7 +1591,7 @@ def calculate_data_quality(indikator, berita):
         if indikator.get("current_price", 0) > 0:
             score += 10
     
-    score = min(100, score)
+    score = round(min(100, score), 1)
     
     # Determine grade with warning
     grade = "A" if score >= 80 else "B" if score >= 60 else "C" if score >= 40 else "D"
@@ -1670,6 +1670,10 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
         
     if confidence == 0 or "IGNORE" in sinyal.upper() or "HOLD" in sinyal.upper():
         branching_rules = "2. ANTI-HALLUCINATION WAJIB: Status adalah NO TRADE atau IGNORE. Narasi HANYA boleh menjelaskan mengapa kriteria tidak terpenuhi. DILARANG KERAS menyebutkan angka Risk/Reward (R:R), persentase keuntungan, kalimat penjelasan R:R, Take Profit, atau Stop Loss. Dilarang memunculkan frasa kontradiktif seperti 'System Confidence tinggi'."
+    elif confidence < 50:
+        branching_rules = "2. JIKA Confidence < 50%: WAJIB cantumkan kalimat: 'Sistem belum memiliki keyakinan yang cukup untuk eksekusi, sehingga aksi hanya sebatas pemantauan (Watchlist)'. DILARANG KERAS menggunakan frasa 'keyakinan yang cukup untuk melakukan aksi'."
+    elif confidence < 60:
+        branching_rules = "2. JIKA Confidence < 60%: DILARANG KERAS menggunakan frasa 'keyakinan yang cukup untuk melakukan aksi' karena status belum READY/EXECUTE."
     else:
         branching_rules = "2. JIKA Confidence > 60%: WAJIB berikan kalimat penjelas eksplisit di akhir paragraf mengapa angka tersebut tinggi (berdasarkan konfluensi indikator, dll)."
 
@@ -1686,7 +1690,7 @@ Nama Sinyal Tampilan: {nama_sinyal_tabel}
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
-1. TATA BAHASA: Gunakan Bahasa Indonesia baku, hindari glitch bahasa asing/kata acak. Nama sinyal dalam teks WAJIB 100% sama dengan "{nama_sinyal_tabel}". JANGAN diubah menjadi frasa lain (seperti "Neutral Watch").
+1. TATA BAHASA: Gunakan Bahasa Indonesia baku. HANYA gunakan alfabet Latin (A-Z). DILARANG KERAS memakai aksara Sirilik (Cyrillic), Arab, atau encoding bahasa asing apapun! Nama sinyal dalam teks WAJIB 100% sama dengan "{nama_sinyal_tabel}". JANGAN diubah menjadi frasa lain (seperti "Neutral Watch").
 {branching_rules}
 3. JIKA Status bukan NO TRADE: Anda WAJIB mengutip format Action Plan secara LENGKAP (Strategi, TP, SL, R:R). 
 4. KALIMAT PERTAMA WAJIB langsung mengutip isi dari 'Analisis Mendalam' (jika ada) atau status Tren makro. JANGAN PERNAH MEMOTONG KALIMAT DI TENGAH JALAN.
@@ -1911,6 +1915,7 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
     
     # Validasi RR
     rr_valid_icon = "✓" if risk_metrics.get("is_valid_rr", False) else "✗"
+    rr_final_display = f"{rr_ratio} {rr_valid_icon}" if rr_ratio != "-" else "-"
 
     # --- SAFETY NET: MENCEGAH UNBOUND LOCAL ERROR SAAT HOLD/NO TRADE ---
     if 'entry_display' not in locals(): entry_display = "-"
@@ -1968,9 +1973,9 @@ Confidence: {confidence:.0f}%{no_trade_warning}{early_entry_warning}{weights_not
 • Entry:        {entry_display}
 • Stop Loss:    {sl_display} (Risk: {risk_pct_display})
 • Take Profit:  {tp_display}
-• Risk/Reward: {rr_ratio} | R:R = 1:{risk_reward_display} {rr_valid_icon}
+• Risk/Reward:  {rr_final_display}
 • Kelly:        {kelly_display}
-• Risk Level:  {risk_level}
+• Risk Level:   {risk_level}
 
 ============================================================
 💼 POSITION SIZING
