@@ -1,4 +1,4 @@
-﻿from openai import OpenAI
+from openai import OpenAI
 import requests
 from dotenv import load_dotenv
 import os
@@ -1262,18 +1262,8 @@ def calculate_score(indikator, sentimen, weights, market_condition, trend_direct
     else:
         scores["volume"] = 0
     
-    # Sentimen Score (Micro-Tuning)
-    sentimen_skor = sentimen.get("skor", 0)
-    if sentimen_skor >= 0.7:
-        scores["sentimen"] = 2
-    elif sentimen_skor >= 0.3:
-        scores["sentimen"] = 1
-    elif sentimen_skor <= -0.7:
-        scores["sentimen"] = -2
-    elif sentimen_skor <= -0.3:
-        scores["sentimen"] = -1
-    else:
-        scores["sentimen"] = 0
+    # Sentimen Score (Strict Variable Binding)
+    scores["sentimen"] = float(sentimen.get("skor", 0))
     
     # === TREND DOMINANCE RULE ===
     # Jika indikator melawan trend dengan volume tinggi → kurangi skor -1
@@ -1298,7 +1288,7 @@ def calculate_score(indikator, sentimen, weights, market_condition, trend_direct
         w = weights.get(key, 1.0)
         total += scores[key] * w
     
-    return scores, int(total)
+    return scores, round(total, 2)
 
 # ==============================
 # 8. NO TRADE ZONE & BREAKOUT DETECTION
@@ -1656,19 +1646,25 @@ def get_ai_reasoning(symbol, indikator, sentimen, skor_detail, total_skor, sinya
             
     vol_context = "Volume transaksi yang sepi menandakan market belum siap breakout." if "RENDAH" in vol_str or ("NORMAL" in vol_str and adx < 20) else ""
         
+    if confidence == 0 or "IGNORE" in sinyal.upper():
+        branching_rules = "2. IF Confidence == 0 atau Sinyal IGNORE: Narasi HANYA boleh menjelaskan mengapa kriteria tidak terpenuhi (fokus pada Missing Requirements). Dilarang memunculkan frasa kontradiktif seperti 'System Confidence tinggi' atau membahas probabilitas profit. JANGAN berikan angka tebakan R:R, Take Profit, atau Stop Loss karena datanya Kosong/Null."
+    else:
+        branching_rules = "2. JIKA Confidence > 60%: WAJIB berikan kalimat penjelas eksplisit di akhir paragraf mengapa angka tersebut tinggi. Contoh: \"System Confidence tinggi ({confidence}%) karena kombinasi tren yang solid, konfluensi indikator...\""
+
     prompt = f"""Sebagai AI Quant Trader tingkat lanjut, buat laporan eksekusi untuk {symbol}.
 
 [DATA KUANTITATIF]
 Tren Makro: {market_condition} | Kekuatan Tren: {adx_desc} (ADX: {adx:.1f})
 Analisis Mendalam: {kondisi_harga} {vol_context}
 Status Sistem: {edge_clarity} | System Confidence: {confidence}%
+Sinyal Internal: {sinyal}
 
 [ACTION PLAN LENGKAP]
 {next_trade_plan}
 
 ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
 1. KALIMAT PERTAMA WAJIB langsung mengutip isi dari 'Analisis Mendalam' (jika ada) atau status Tren makro.
-2. JIKA Confidence > 60%: WAJIB berikan kalimat penjelas eksplisit di akhir paragraf mengapa angka tersebut tinggi. Contoh: "System Confidence tinggi ({confidence}%) karena kombinasi tren yang solid, konfluensi indikator, dan posisi harga yang ideal dengan rasio risiko-imbalan yang sangat baik."
+{branching_rules}
 3. JIKA Status "ROADMAP", "WATCHLIST", atau "NO ENTRY YET": Anda WAJIB mengutip format Action Plan secara LENGKAP (Strategi, Area Pantau, TP, SL, R:R).
 4. JANGAN PERNAH MEMOTONG KALIMAT DI TENGAH JALAN.
 """
@@ -1817,19 +1813,18 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
         else:
             early_entry_warning = ""
 
-# PRIORITAS UTAMA: Jika HOLD atau Entry 0, wajib "-" semua
-    if "HOLD" in sinyal.upper() or entry == 0:
+# PRIORITAS UTAMA: Null/Undefined Fallback
+    if "HOLD" in sinyal.upper() or entry == 0 or float(confidence) == 0.0 or "IGNORE" in sinyal.upper():
         entry_display = "-"
         sl_display = "-"
         tp_display = "-"
-        risk_level = "LOW"
+        risk_level = "LOW (Standby)" if "HOLD" in sinyal.upper() else "LOW (Avoid)"
         rr_ratio = "-"
         copy_trade_status = "NO TRADE"
         position_size_display = "-"
         risk_reward_display = "-"
         risk_pct_display = "-"
         kelly_display = "-"
-        sl_display = "-"
     else:
         is_trade = "BUY" in sinyal or "SELL" in sinyal
         copy_trade_status = "OPEN" if is_trade else "NO TRADE"
@@ -1934,14 +1929,14 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
 📰 SENTIMEN BERITA
 ============================================================
 {berita_str}
-• Status: {sentimen.get('status', 'N/A')} | Skor: {sentimen.get('skor', 0)}
+• Status: {sentimen.get('status', 'N/A')} | Skor: {skor_detail.get('sentimen', 0)}
 • Dampak: {sentimen.get('dampak', 'N/A')}
 
 ============================================================
 🎯 SIGNAL & SKOR
 ============================================================
 Sinyal: {sinyal_display}
-Skor Total: {'+' if total_skor > 0 else ''}{total_skor} (RSI:{skor_detail.get('rsi', 0)} + MACD:{skor_detail.get('macd', 0)} + Trend:{skor_detail.get('trend', 0)} + Volume:{skor_detail.get('volume', 0)} + Sentimen:{skor_detail.get('sentimen', 0)})
+Skor Total: {'+' if float(total_skor) > 0 else ''}{total_skor} (RSI:{skor_detail.get('rsi', 0)} + MACD:{skor_detail.get('macd', 0)} + Trend:{skor_detail.get('trend', 0)} + Volume:{skor_detail.get('volume', 0)} + Sentimen:{skor_detail.get('sentimen', 0)})
 Confidence: {confidence:.0f}%{no_trade_warning}{early_entry_warning}{weights_note}
 
 ============================================================
@@ -2710,6 +2705,20 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         risk_metrics=risk_metrics,
         data_quality=data_quality
     )
+    
+    # ============================================================
+    # SAFETY NET: STRICT VARIABLE BINDING & NULL FALLBACK
+    # ============================================================
+    if confidence == 0 or "IGNORE" in sinyal.upper() or "HOLD" in sinyal.upper():
+        entry = 0
+        sl = 0
+        tp = 0
+        rr_ratio = "-"
+        position_size = 0
+        risk_metrics["risk_reward"] = 0
+        risk_metrics["kelly_pct"] = 0
+        risk_metrics["rr_ratio"] = "-"
+        risk_level = risk_level if risk_level else "LOW (Avoid)"
     
     analysis_data = {
         "sinyal": sinyal,
