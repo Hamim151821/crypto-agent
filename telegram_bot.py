@@ -77,11 +77,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📈 Analisis Crypto", callback_data="crypto"),
          InlineKeyboardButton("📉 Analisis Saham", callback_data="saham")],
+        [InlineKeyboardButton("📊 Performa Saya", callback_data="performa"),
+         InlineKeyboardButton("📋 Histori Saya", callback_data="histori")],
         [InlineKeyboardButton("🔔 Set Alert", callback_data="alert"),
          InlineKeyboardButton("📋 Alert Aktif", callback_data="lihat_alert")],
-        [InlineKeyboardButton("📊 Performa Bot", callback_data="performa"),
-         InlineKeyboardButton("💰 Set Modal", callback_data="set_modal")],
-        [InlineKeyboardButton("ℹ️ Tentang Bot", callback_data="about")],
+        [InlineKeyboardButton("💰 Set Modal", callback_data="set_modal"),
+         InlineKeyboardButton("ℹ️ Tentang Bot", callback_data="about")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -577,6 +578,71 @@ _Gunakan /performa [aset] untuk update sinyal tertentu_
             parse_mode="Markdown",
             disable_web_page_preview=True
         )
+    elif query.data == "histori":
+        # Inline histori — langsung panggil logic yang sama dengan /histori
+        user_id = query.from_user.id
+        await query.message.reply_text("⏳ Mengambil histori analisis kamu...")
+
+        try:
+            gc = get_sheets_client()
+            if not gc:
+                await query.message.reply_text("⚠️ Gagal terhubung ke Google Sheets.")
+                return
+
+            sheet_id = os.getenv("GOOGLE_SHEETS_ID")
+            spreadsheet = gc.open_by_key(sheet_id)
+
+            try:
+                ws = spreadsheet.worksheet("Histori")
+            except:
+                await query.message.reply_text("⚠️ Belum ada data histori!")
+                return
+
+            all_values = ws.get_all_values()
+            if len(all_values) < 2:
+                await query.message.reply_text("⚠️ Belum ada data histori!")
+                return
+
+            headers = all_values[0]
+            data_rows = all_values[1:]
+            uid_str = str(user_id)
+            uid_col = headers.index("User ID") if "User ID" in headers else -1
+
+            user_rows = []
+            for row in data_rows:
+                if uid_col >= 0 and uid_col < len(row) and row[uid_col] == uid_str:
+                    user_rows.append(row)
+
+            if not user_rows:
+                await query.message.reply_text(
+                    "⚠️ Kamu belum memiliki histori analisis.\n\n"
+                    "💡 Coba `/analisis bitcoin` untuk memulai!",
+                    parse_mode="Markdown"
+                )
+                return
+
+            recent = user_rows[-10:]
+            teks = f"📋 *Histori Analisis Kamu* (terakhir {len(recent)} dari {len(user_rows)} total)\n\n"
+
+            tanggal_col = headers.index("Tanggal & Waktu") if "Tanggal & Waktu" in headers else 0
+            jenis_col = headers.index("Jenis") if "Jenis" in headers else -1
+            aset_col = headers.index("Nama Aset") if "Nama Aset" in headers else -1
+            sinyal_col = headers.index("Sinyal AI") if "Sinyal AI" in headers else -1
+
+            for idx, row in enumerate(reversed(recent), 1):
+                tanggal = row[tanggal_col] if tanggal_col < len(row) else "-"
+                jenis_val = row[jenis_col] if jenis_col >= 0 and jenis_col < len(row) else "-"
+                aset = row[aset_col] if aset_col >= 0 and aset_col < len(row) else "-"
+                sinyal = row[sinyal_col] if sinyal_col >= 0 and sinyal_col < len(row) else "-"
+                emoji = "📈" if jenis_val == "Crypto" else "📉"
+                teks += f"{idx}. {emoji} *{aset}* | {sinyal} | {tanggal}\n"
+
+            teks += f"\n_Total analisis: {len(user_rows)}_"
+            await query.message.reply_text(teks, parse_mode="Markdown")
+
+        except Exception as e:
+            print(f"❌ Error histori button: {e}")
+            await query.message.reply_text("⚠️ Gagal mengambil histori. Coba lagi nanti!")
 
 # ==============================
 # COMMAND /performa
