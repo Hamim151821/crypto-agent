@@ -2940,7 +2940,7 @@ def parse_trading_info(hasil_analisis, harga_sekarang):
 # ==============================
 # FUNGSI GOOGLE SHEETS — SIMPAN
 # ==============================
-def simpan_ke_sheets(jenis, nama_aset, harga_data, analisis, indikator):
+def simpan_ke_sheets(jenis, nama_aset, harga_data, analisis, indikator, user_id=None):
     try:
         gc = get_sheets_client()
         if not gc:
@@ -2953,9 +2953,9 @@ def simpan_ke_sheets(jenis, nama_aset, harga_data, analisis, indikator):
         try:
             ws = spreadsheet.worksheet("Histori")
         except:
-            ws = spreadsheet.add_worksheet("Histori", 1000, 10)
+            ws = spreadsheet.add_worksheet("Histori", 1000, 12)
             ws.append_row([
-                "Tanggal & Waktu", "Jenis", "Nama Aset",
+                "Tanggal & Waktu", "User ID", "Jenis", "Nama Aset",
                 "Harga", "RSI", "MACD", "Sinyal AI", "Analisis"
             ])
 
@@ -2981,9 +2981,10 @@ def simpan_ke_sheets(jenis, nama_aset, harga_data, analisis, indikator):
         elif "JUAL" in analisis_upper:
             sinyal = "JUAL"
 
-        # Tambah baris baru
+        # Tambah baris baru (dengan User ID)
         ws.append_row([
             datetime.now().strftime("%d/%m/%Y %H:%M"),
+            str(user_id) if user_id else "-",
             jenis,
             nama_aset.upper(),
             harga,
@@ -3000,7 +3001,7 @@ def simpan_ke_sheets(jenis, nama_aset, harga_data, analisis, indikator):
 # ==============================
 # FUNGSI PERFORMANCE TRACKING
 # ==============================
-def catat_sinyal(jenis, nama_aset, harga_entry, sinyal, stop_loss, take_profit, skor_detail=None):
+def catat_sinyal(jenis, nama_aset, harga_entry, sinyal, stop_loss, take_profit, skor_detail=None, user_id=None):
     try:
         gc = get_sheets_client()
         if not gc:
@@ -3009,9 +3010,9 @@ def catat_sinyal(jenis, nama_aset, harga_entry, sinyal, stop_loss, take_profit, 
         sheet_id = os.getenv("GOOGLE_SHEETS_ID")
         spreadsheet = gc.open_by_key(sheet_id)
 
-        # Header termasuk Skor Detail untuk adaptive learning
+        # Header termasuk User ID dan Skor Detail untuk adaptive learning
         headers = [
-            "Tanggal", "Jenis", "Aset", "Sinyal",
+            "Tanggal", "User ID", "Jenis", "Aset", "Sinyal",
             "Harga Entry", "Stop Loss", "Take Profit",
             "Harga Penutupan", "Hasil", "Profit/Loss %",
             "Status", "Skor Detail"
@@ -3028,6 +3029,7 @@ def catat_sinyal(jenis, nama_aset, harga_entry, sinyal, stop_loss, take_profit, 
 
         ws.append_row([
             datetime.now().strftime("%d/%m/%Y %H:%M"),
+            str(user_id) if user_id else "-",
             jenis,
             nama_aset.upper(),
             sinyal,
@@ -3045,7 +3047,7 @@ def catat_sinyal(jenis, nama_aset, harga_entry, sinyal, stop_loss, take_profit, 
     except Exception as e:
         print(f"⚠️ Gagal catat sinyal: {e}")
 
-def hitung_performa():
+def hitung_performa(user_id=None):
     try:
         gc = get_sheets_client()
         if not gc:
@@ -3088,6 +3090,13 @@ def hitung_performa():
         if not data:
             return None
 
+        # Filter by user_id jika diberikan (isolasi data per user)
+        if user_id is not None:
+            uid_str = str(user_id)
+            data = [d for d in data if d.get("User ID", "") == uid_str]
+            if not data:
+                return None
+
         total = len(data)
         closed = [d for d in data if d.get("Status", "") == "CLOSED"]
         wins = [d for d in closed if d.get("Hasil", "") == "WIN"]
@@ -3123,7 +3132,7 @@ def hitung_performa():
         print(f"⚠️ Gagal hitung performa: {e}")
         return None
 
-def update_sinyal_closed(nama_aset):
+def update_sinyal_closed(nama_aset, user_id=None):
     try:
         gc = get_sheets_client()
         if not gc:
@@ -3132,53 +3141,82 @@ def update_sinyal_closed(nama_aset):
         sheet_id = os.getenv("GOOGLE_SHEETS_ID")
         spreadsheet = gc.open_by_key(sheet_id)
         ws = spreadsheet.worksheet("Performance")
-        data = ws.get_all_records()
+        all_values = ws.get_all_values()
 
-        for i, row in enumerate(data, 2):
-            if row["Aset"] == nama_aset.upper() and row["Status"] == "OPEN":
-                try:
-                    # Ambil harga terkini
-                    if "." in nama_aset:
-                        harga_skrg = get_stock_price(nama_aset)["harga"]
-                    else:
-                        data_harga = get_crypto_price(nama_aset)
-                        aset_key = list(data_harga.keys())[0]
-                        harga_skrg = data_harga[aset_key]["idr"]
+        if len(all_values) < 2:
+            return
 
-                    entry = float(row["Harga Entry"])
-                    sl = float(row["Stop Loss"])
-                    tp = float(row["Take Profit"])
-                    sinyal = row["Sinyal"]
+        headers = all_values[0]
+        uid_col = headers.index("User ID") if "User ID" in headers else -1
+        aset_col = headers.index("Aset") if "Aset" in headers else 2
+        status_col = headers.index("Status") if "Status" in headers else -1
+        entry_col = headers.index("Harga Entry") if "Harga Entry" in headers else -1
+        sl_col = headers.index("Stop Loss") if "Stop Loss" in headers else -1
+        tp_col = headers.index("Take Profit") if "Take Profit" in headers else -1
+        sinyal_col = headers.index("Sinyal") if "Sinyal" in headers else -1
 
-                    # Tentukan WIN/LOSS
-                    hasil = "-"
-                    pl_pct = 0
+        for i, row in enumerate(all_values[1:], 2):  # mulai baris 2 (setelah header)
+            if len(row) <= max(aset_col, status_col):
+                continue
 
-                    if sinyal == "BELI":
-                        if harga_skrg >= tp:
-                            hasil = "WIN"
-                            pl_pct = round((tp - entry) / entry * 100, 2)
-                        elif harga_skrg <= sl:
-                            hasil = "LOSS"
-                            pl_pct = round((sl - entry) / entry * 100, 2)
+            row_aset = row[aset_col] if aset_col >= 0 else ""
+            row_status = row[status_col] if status_col >= 0 else ""
+            row_uid = row[uid_col] if uid_col >= 0 and uid_col < len(row) else ""
 
-                    elif sinyal == "JUAL":
-                        if harga_skrg <= tp:
-                            hasil = "WIN"
-                            pl_pct = round((entry - tp) / entry * 100, 2)
-                        elif harga_skrg >= sl:
-                            hasil = "LOSS"
-                            pl_pct = round((entry - sl) / entry * 100, 2)
+            # Filter: aset harus cocok, status OPEN, dan user_id harus cocok (jika diberikan)
+            if row_aset != nama_aset.upper() or row_status != "OPEN":
+                continue
+            if user_id is not None and row_uid != str(user_id):
+                continue
 
-                    if hasil != "-":
-                        ws.update_cell(i, 8, harga_skrg)
-                        ws.update_cell(i, 9, hasil)
-                        ws.update_cell(i, 10, f"{pl_pct}%")
-                        ws.update_cell(i, 11, "CLOSED")
-                        print(f"✅ Sinyal {nama_aset} diupdate: {hasil} ({pl_pct}%)")
+            try:
+                # Ambil harga terkini
+                if "." in nama_aset:
+                    harga_skrg = get_stock_price(nama_aset)["harga"]
+                else:
+                    data_harga = get_crypto_price(nama_aset)
+                    aset_key = list(data_harga.keys())[0]
+                    harga_skrg = data_harga[aset_key]["idr"]
 
-                except Exception as e:
-                    print(f"⚠️ Error update sinyal: {e}")
+                entry = float(row[entry_col]) if entry_col >= 0 else 0
+                sl_val = float(row[sl_col]) if sl_col >= 0 else 0
+                tp_val = float(row[tp_col]) if tp_col >= 0 else 0
+                sinyal = row[sinyal_col] if sinyal_col >= 0 else ""
+
+                # Tentukan WIN/LOSS
+                hasil = "-"
+                pl_pct = 0
+
+                if sinyal == "BELI":
+                    if harga_skrg >= tp_val:
+                        hasil = "WIN"
+                        pl_pct = round((tp_val - entry) / entry * 100, 2)
+                    elif harga_skrg <= sl_val:
+                        hasil = "LOSS"
+                        pl_pct = round((sl_val - entry) / entry * 100, 2)
+
+                elif sinyal == "JUAL":
+                    if harga_skrg <= tp_val:
+                        hasil = "WIN"
+                        pl_pct = round((entry - tp_val) / entry * 100, 2)
+                    elif harga_skrg >= sl_val:
+                        hasil = "LOSS"
+                        pl_pct = round((entry - sl_val) / entry * 100, 2)
+
+                if hasil != "-":
+                    # Cari kolom index untuk update (1-indexed for gspread)
+                    close_col = headers.index("Harga Penutupan") + 1 if "Harga Penutupan" in headers else 9
+                    hasil_col_idx = headers.index("Hasil") + 1 if "Hasil" in headers else 10
+                    pl_col = headers.index("Profit/Loss %") + 1 if "Profit/Loss %" in headers else 11
+                    status_col_idx = headers.index("Status") + 1 if "Status" in headers else 12
+                    ws.update_cell(i, close_col, harga_skrg)
+                    ws.update_cell(i, hasil_col_idx, hasil)
+                    ws.update_cell(i, pl_col, f"{pl_pct}%")
+                    ws.update_cell(i, status_col_idx, "CLOSED")
+                    print(f"✅ Sinyal {nama_aset} diupdate: {hasil} ({pl_pct}%)")
+
+            except Exception as e:
+                print(f"⚠️ Error update sinyal: {e}")
 
     except Exception as e:
         print(f"⚠️ Gagal update sinyal: {e}")

@@ -13,7 +13,8 @@ from main import (
     alert_list, tambah_alert, simpan_alert,
     simpan_ke_sheets, simpan_ke_excel, catat_sinyal,
     hitung_performa, update_sinyal_closed,
-    DEFAULT_MODAL
+    DEFAULT_MODAL,
+    get_sheets_client
 )
 from user_data import UserDataManager
 
@@ -196,7 +197,7 @@ async def analisis_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Simpan ke Google Sheets (setelah pesan terkirim)
         try:
-            simpan_ke_sheets(jenis, aset, data_harga, hasil, indikator)
+            simpan_ke_sheets(jenis, aset, data_harga, hasil, indikator, user_id=user_id)
 
             # Catat sinyal ke Performance sheet
             if analysis_data.get("sinyal") != "HOLD":
@@ -206,7 +207,8 @@ async def analisis_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     analysis_data["sinyal"],
                     analysis_data["sl"],
                     analysis_data["tp"],
-                    analysis_data.get("skor_detail")
+                    analysis_data.get("skor_detail"),
+                    user_id=user_id
                 )
         except Exception as e:
             print(f"⚠️ Gagal simpan/catat performa: {e}")
@@ -499,10 +501,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await kirim_pesan_panjang(query.message, hasil)
 
             try:
-                simpan_ke_sheets(jenis, aset, data_harga, hasil, indikator)
+                simpan_ke_sheets(jenis, aset, data_harga, hasil, indikator, user_id=query.from_user.id)
                 if analysis_data.get("sinyal") != "HOLD":
                     catat_sinyal(jenis, aset, analysis_data["entry"], analysis_data["sinyal"],
-                                analysis_data["sl"], analysis_data["tp"], analysis_data.get("skor_detail"))
+                                analysis_data["sl"], analysis_data["tp"], analysis_data.get("skor_detail"),
+                                user_id=query.from_user.id)
             except Exception as e:
                 print(f"⚠️ Gagal simpan: {e}")
 
@@ -527,8 +530,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 teks += f"{i}. *{a['nama_aset']}* → {a['kondisi']} `{a['harga_target']:,}`\n"
             await query.message.reply_text(teks, parse_mode="Markdown")
     elif query.data == "performa":
-        await query.message.reply_text("⏳ Menghitung performa bot...")
-        performa = hitung_performa()
+        await query.message.reply_text("⏳ Menghitung performa kamu...")
+        performa = hitung_performa(user_id=query.from_user.id)
         if not performa:
             await query.message.reply_text("⚠️ Belum ada data performa!\n\nData performa akan muncul setelah kamu melakukan analisis dan bot mencatat sinyal BELI/JUAL.")
         else:
@@ -579,13 +582,15 @@ _Gunakan /performa [aset] untuk update sinyal tertentu_
 # COMMAND /performa
 # ==============================
 async def performa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("⏳ Menghitung performa bot...")
+    await update.message.reply_text("⏳ Menghitung performa kamu...")
     
+    user_id = update.effective_user.id
+
     # Update sinyal yang sudah closed dulu
     if context.args:
-        update_sinyal_closed(context.args[0])
+        update_sinyal_closed(context.args[0], user_id=user_id)
     
-    performa = hitung_performa()
+    performa = hitung_performa(user_id=user_id)
     
     if not performa:
         await update.message.reply_text("⚠️ Belum ada data performa!")
@@ -608,6 +613,79 @@ async def performa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(teks, parse_mode="Markdown")
 
 # ==============================
+# COMMAND /histori
+# ==============================
+async def histori_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Tampilkan histori analisis milik user ini dari Google Sheets"""
+    user_id = update.effective_user.id
+    await update.message.reply_text("⏳ Mengambil histori analisis kamu...")
+
+    try:
+        gc = get_sheets_client()
+        if not gc:
+            await update.message.reply_text("⚠️ Gagal terhubung ke Google Sheets.")
+            return
+
+        sheet_id = os.getenv("GOOGLE_SHEETS_ID")
+        spreadsheet = gc.open_by_key(sheet_id)
+
+        try:
+            ws = spreadsheet.worksheet("Histori")
+        except:
+            await update.message.reply_text("⚠️ Belum ada data histori!")
+            return
+
+        all_values = ws.get_all_values()
+        if len(all_values) < 2:
+            await update.message.reply_text("⚠️ Belum ada data histori!")
+            return
+
+        headers = all_values[0]
+        data_rows = all_values[1:]
+
+        # Filter by user_id
+        uid_str = str(user_id)
+        uid_col = headers.index("User ID") if "User ID" in headers else -1
+
+        user_rows = []
+        for row in data_rows:
+            if uid_col >= 0 and uid_col < len(row) and row[uid_col] == uid_str:
+                user_rows.append(row)
+
+        if not user_rows:
+            await update.message.reply_text(
+                "⚠️ Kamu belum memiliki histori analisis.\n\n"
+                "💡 Coba `/analisis bitcoin` untuk memulai!",
+                parse_mode="Markdown"
+            )
+            return
+
+        # Tampilkan 10 histori terakhir
+        recent = user_rows[-10:]
+        teks = f"📋 *Histori Analisis Kamu* (terakhir {len(recent)} dari {len(user_rows)} total)\n\n"
+
+        # Cari kolom index
+        tanggal_col = headers.index("Tanggal & Waktu") if "Tanggal & Waktu" in headers else 0
+        jenis_col = headers.index("Jenis") if "Jenis" in headers else -1
+        aset_col = headers.index("Nama Aset") if "Nama Aset" in headers else -1
+        sinyal_col = headers.index("Sinyal AI") if "Sinyal AI" in headers else -1
+
+        for idx, row in enumerate(reversed(recent), 1):
+            tanggal = row[tanggal_col] if tanggal_col < len(row) else "-"
+            jenis = row[jenis_col] if jenis_col >= 0 and jenis_col < len(row) else "-"
+            aset = row[aset_col] if aset_col >= 0 and aset_col < len(row) else "-"
+            sinyal = row[sinyal_col] if sinyal_col >= 0 and sinyal_col < len(row) else "-"
+            emoji = "📈" if jenis == "Crypto" else "📉"
+            teks += f"{idx}. {emoji} *{aset}* | {sinyal} | {tanggal}\n"
+
+        teks += f"\n_Total analisis: {len(user_rows)}_"
+        await update.message.reply_text(teks, parse_mode="Markdown")
+
+    except Exception as e:
+        print(f"❌ Error histori: {e}")
+        await update.message.reply_text("⚠️ Gagal mengambil histori. Coba lagi nanti!")
+
+# ==============================
 # JALANKAN BOT
 # ==============================
 def main():
@@ -621,6 +699,7 @@ def main():
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("about", about_cmd))
     app.add_handler(CommandHandler("performa", performa_cmd))
+    app.add_handler(CommandHandler("histori", histori_cmd))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     print(f"🤖 {BOT_NAME} v{BOT_VERSION} berjalan...")
