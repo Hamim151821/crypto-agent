@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 alerts.json
 histori_analisis.xlsx
+user_data.json
+credentials.json

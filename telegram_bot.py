@@ -15,17 +15,18 @@ from main import (
     hitung_performa, update_sinyal_closed,
     DEFAULT_MODAL
 )
+from user_data import UserDataManager
 
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Per-user modal storage
-user_modals = {}
+# Persistent user data manager
+user_manager = UserDataManager()
 
-def get_user_modal(user_id):
-    """Ambil modal user, default Rp 1.000.000"""
-    return user_modals.get(user_id, DEFAULT_MODAL)
+# Bot metadata
+BOT_VERSION = "2.1.0"
+BOT_NAME = "Crypto & Saham Agent"
 
 # ==============================
 # HELPER — Kirim pesan panjang
@@ -69,19 +70,33 @@ def retry(func, *args, max_retry=3, **kwargs):
 # COMMAND /start
 # ==============================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    remaining = user_manager.get_remaining_requests(user.id)
+
     keyboard = [
-        [InlineKeyboardButton("📈 Analisis Crypto", callback_data="crypto")],
-        [InlineKeyboardButton("📉 Analisis Saham", callback_data="saham")],
-        [InlineKeyboardButton("🔔 Set Alert", callback_data="alert")],
-        [InlineKeyboardButton("📋 Lihat Alert Aktif", callback_data="lihat_alert")],
-        [InlineKeyboardButton("📊 Performa Bot", callback_data="performa")],
-        [InlineKeyboardButton("💰 Set Modal", callback_data="set_modal")],
+        [InlineKeyboardButton("📈 Analisis Crypto", callback_data="crypto"),
+         InlineKeyboardButton("📉 Analisis Saham", callback_data="saham")],
+        [InlineKeyboardButton("🔔 Set Alert", callback_data="alert"),
+         InlineKeyboardButton("📋 Alert Aktif", callback_data="lihat_alert")],
+        [InlineKeyboardButton("📊 Performa Bot", callback_data="performa"),
+         InlineKeyboardButton("💰 Set Modal", callback_data="set_modal")],
+        [InlineKeyboardButton("ℹ️ Tentang Bot", callback_data="about")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
+
     await update.message.reply_text(
-        "🤖 *CRYPTO & SAHAM AGENT v2.0*\n"
-        "10-Point Analysis System\n\n"
-        "Pilih menu di bawah:",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🤖  *{BOT_NAME} v{BOT_VERSION}*\n"
+        f"   _10-Point Analysis System_\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"Halo, {user.first_name}! 👋\n\n"
+        f"Bot ini menganalisis crypto & saham secara gratis menggunakan:\n"
+        f"• 10 Indikator Teknikal (RSI, MACD, Bollinger, dll)\n"
+        f"• AI-Powered Narrative & Scoring\n"
+        f"• Smart Risk Management & Position Sizing\n\n"
+        f"📊 Sisa kuota: *{remaining} analisis/jam*\n"
+        f"💡 Ketik `/analisis bitcoin` untuk mulai!\n\n"
+        f"Pilih menu di bawah:",
         parse_mode="Markdown",
         reply_markup=reply_markup
     )
@@ -97,13 +112,21 @@ async def analisis_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    aset = context.args[0].strip()
     user_id = update.effective_user.id
-    modal = get_user_modal(user_id)
+
+    # ── Rate Limit Check ──
+    allowed, limit_msg = user_manager.check_rate_limit(user_id)
+    if not allowed:
+        await update.message.reply_text(limit_msg)
+        return
+
+    aset = context.args[0].strip()
+    modal = user_manager.get_modal(user_id)
+    remaining = user_manager.get_remaining_requests(user_id)
     
     await update.message.reply_text(
         f"⏳ Mengambil data *{aset}*...\n"
-        f"💰 Modal: Rp {modal:,.0f}",
+        f"💰 Modal: Rp {modal:,.0f} | Sisa kuota: {remaining}",
         parse_mode="Markdown"
     )
 
@@ -165,6 +188,9 @@ async def analisis_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             aset, jenis, data_harga, berita, indikator, modal
         )
 
+        # Record request SETELAH berhasil
+        user_manager.record_request(user_id)
+
         # Kirim hasil analisis
         await kirim_pesan_panjang(update, hasil)
 
@@ -189,10 +215,15 @@ async def analisis_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"❌ ERROR analisis {aset}: {type(e).__name__}: {e}")
         try:
             await update.message.reply_text(
-                f"⚠️ Terjadi error saat menganalisis {aset}\n\nDetail: {type(e).__name__}\nCoba beberapa saat lagi!"
+                f"⚠️ Terjadi gangguan saat menganalisis *{aset}*.\n\n"
+                f"Kemungkinan penyebab:\n"
+                f"• Server data sedang sibuk\n"
+                f"• Nama aset salah ketik\n\n"
+                f"💡 Coba lagi dalam beberapa saat!",
+                parse_mode="Markdown"
             )
         except:
-            await update.message.reply_text(f"⚠️ Error: {e}")
+            await update.message.reply_text(f"⚠️ Error saat analisis. Coba lagi nanti!")
 
 # ==============================
 # COMMAND /modal
@@ -201,7 +232,7 @@ async def modal_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     if not context.args:
-        current = get_user_modal(user_id)
+        current = user_manager.get_modal(user_id)
         await update.message.reply_text(
             f"💰 *Modal kamu saat ini:* Rp {current:,.0f}\n\n"
             f"Untuk mengubah, ketik:\n`/modal 5000000`\n\n"
@@ -218,7 +249,7 @@ async def modal_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if modal_baru <= 0:
             raise ValueError("Modal harus positif")
         
-        user_modals[user_id] = modal_baru
+        user_manager.set_modal(user_id, modal_baru)
         await update.message.reply_text(
             f"✅ *Modal berhasil diubah!*\n\n"
             f"💰 Modal baru: Rp {modal_baru:,.0f}\n"
@@ -291,8 +322,8 @@ async def alerts_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # COMMAND /help
 # ==============================
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    teks = """
-🤖 *PANDUAN CRYPTO & SAHAM AGENT v2.0*
+    teks = f"""
+🤖 *PANDUAN {BOT_NAME.upper()} v{BOT_VERSION}*
 _(10-Point Analysis System)_
 
 📌 *Perintah yang tersedia:*
@@ -303,6 +334,7 @@ _(10-Point Analysis System)_
 `/alert [aset] [kondisi] [harga]` → Set alert harga
 `/alerts` → Lihat semua alert aktif
 `/performa [aset]` → Lihat & update performa
+`/about` → Tentang bot & developer
 `/help` → Tampilkan panduan ini
 
 📌 *Contoh penggunaan:*
@@ -321,9 +353,53 @@ _(10-Point Analysis System)_
 • Copy Trading & Position Sizing
 • No-Trade Zone Detection
 
+📊 *Kuota:* {user_manager.get_remaining_requests(update.effective_user.id)} analisis tersisa (reset tiap jam)
+
 ⚠️ _Analisis ini bukan saran investasi. Selalu lakukan riset sendiri!_
 """
     await update.message.reply_text(teks, parse_mode="Markdown")
+
+# ==============================
+# COMMAND /about
+# ==============================
+async def about_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    total_users = user_manager.get_total_users()
+    total_analyses = user_manager.get_total_analyses()
+
+    teks = f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━
+ℹ️  *TENTANG {BOT_NAME.upper()}*
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📌 *Versi:* {BOT_VERSION}
+🏗️ *Developer:* Hamim
+🔗 *GitHub:* [crypto-agent](https://github.com/Hamim151821/crypto-agent)
+
+🛠️ *Tech Stack:*
+• Python 3 + python-telegram-bot
+• OpenRouter AI (Meta Llama 3.3 70B)
+• CoinGecko API (Crypto Data)
+• Yahoo Finance API (Saham)
+• Google Sheets (Data Logging)
+• 10-Point Deterministic Scoring Engine
+
+📊 *Statistik Bot:*
+• Total Pengguna: {total_users}
+• Total Analisis: {total_analyses}
+
+💡 *Fitur Unggulan:*
+• Analisis teknikal 10 indikator
+• AI-powered narrative & reasoning
+• Smart position sizing & risk management
+• Adaptive learning dari trade history
+• Support crypto & saham global
+
+🆓 Bot ini sepenuhnya *GRATIS* dan open-source.
+Dibuat sebagai proyek portofolio untuk menunjukkan kemampuan di bidang AI, data engineering, dan financial technology.
+
+⚠️ _Bukan nasihat keuangan. Selalu lakukan riset sendiri (DYOR)._
+"""
+    await update.message.reply_text(teks, parse_mode="Markdown", disable_web_page_preview=True)
 
 # ==============================
 # BUTTON HANDLER
@@ -333,15 +409,110 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data == "crypto":
+        keyboard = [
+            [InlineKeyboardButton("₿ Bitcoin", callback_data="q_bitcoin"),
+             InlineKeyboardButton("Ξ Ethereum", callback_data="q_ethereum")],
+            [InlineKeyboardButton("◎ Solana", callback_data="q_solana"),
+             InlineKeyboardButton("🐕 Dogecoin", callback_data="q_dogecoin")],
+            [InlineKeyboardButton("🔷 Cardano", callback_data="q_cardano"),
+             InlineKeyboardButton("✕ Ripple", callback_data="q_ripple")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.reply_text(
-            "📈 *Analisis Crypto (10-Point System)*\n\nKetik perintah:\n`/analisis bitcoin`\n`/analisis ethereum`\n`/analisis solana`",
-            parse_mode="Markdown"
+            "📈 *Analisis Crypto (10-Point System)*\n\n"
+            "Pilih aset populer di bawah, atau ketik manual:\n"
+            "`/analisis bitcoin`\n`/analisis ethereum`",
+            parse_mode="Markdown",
+            reply_markup=reply_markup
         )
+
     elif query.data == "saham":
+        keyboard = [
+            [InlineKeyboardButton("🏦 BBCA", callback_data="q_BBCA.JK"),
+             InlineKeyboardButton("🏦 BBRI", callback_data="q_BBRI.JK")],
+            [InlineKeyboardButton("📡 TLKM", callback_data="q_TLKM.JK"),
+             InlineKeyboardButton("🚗 ASII", callback_data="q_ASII.JK")],
+            [InlineKeyboardButton("🍎 AAPL", callback_data="q_AAPL"),
+             InlineKeyboardButton("⚡ NVDA", callback_data="q_NVDA")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.reply_text(
-            "📉 *Analisis Saham (10-Point System)*\n\nKetik perintah:\n`/analisis BBCA.JK`\n`/analisis BBRI.JK`\n`/analisis AAPL`",
+            "📉 *Analisis Saham (10-Point System)*\n\n"
+            "Pilih saham populer di bawah, atau ketik manual:\n"
+            "`/analisis BBCA.JK`\n`/analisis AAPL`",
+            parse_mode="Markdown",
+            reply_markup=reply_markup
+        )
+
+    elif query.data.startswith("q_"):
+        # Quick-access: jalankan analisis langsung
+        aset = query.data[2:]  # Hapus prefix "q_"
+        user_id = query.from_user.id
+
+        # Rate limit check
+        allowed, limit_msg = user_manager.check_rate_limit(user_id)
+        if not allowed:
+            await query.message.reply_text(limit_msg)
+            return
+
+        modal = user_manager.get_modal(user_id)
+
+        # Tentukan jenis
+        if "." in aset or aset.upper() == aset:
+            aset_display = aset.upper()
+            jenis = "Saham"
+        else:
+            aset_display = aset.lower()
+            jenis = "Crypto"
+
+        await query.message.reply_text(
+            f"⏳ Mengambil data *{aset_display}*...\n💰 Modal: Rp {modal:,.0f}",
             parse_mode="Markdown"
         )
+
+        try:
+            if jenis == "Crypto":
+                aset = aset.lower()
+                data_harga = retry(get_crypto_price, aset)
+                if not data_harga or aset not in data_harga:
+                    await query.message.reply_text(f"❌ Crypto *{aset}* tidak ditemukan!", parse_mode="Markdown")
+                    return
+                berita = get_crypto_news(aset)
+                indikator = get_crypto_indicators(aset)
+            else:
+                aset = aset.upper()
+                data_harga = retry(get_stock_price, aset)
+                if not data_harga:
+                    await query.message.reply_text(f"❌ Saham *{aset}* tidak ditemukan!", parse_mode="Markdown")
+                    return
+                berita = get_stock_news(aset)
+                indikator = get_stock_indicators(aset)
+
+            await query.message.reply_text(
+                f"🤖 AI sedang menganalisis *{aset_display}*...",
+                parse_mode="Markdown"
+            )
+
+            hasil, analysis_data = analisis_ai_v2(aset, jenis, data_harga, berita, indikator, modal)
+
+            user_manager.record_request(user_id)
+            await kirim_pesan_panjang(query.message, hasil)
+
+            try:
+                simpan_ke_sheets(jenis, aset, data_harga, hasil, indikator)
+                if analysis_data.get("sinyal") != "HOLD":
+                    catat_sinyal(jenis, aset, analysis_data["entry"], analysis_data["sinyal"],
+                                analysis_data["sl"], analysis_data["tp"], analysis_data.get("skor_detail"))
+            except Exception as e:
+                print(f"⚠️ Gagal simpan: {e}")
+
+        except Exception as e:
+            print(f"❌ ERROR quick-analisis {aset}: {e}")
+            await query.message.reply_text(
+                f"⚠️ Gagal menganalisis *{aset_display}*. Coba lagi nanti!",
+                parse_mode="Markdown"
+            )
+
     elif query.data == "alert":
         await query.message.reply_text(
             "🔔 *Set Alert Harga*\n\nFormat:\n`/alert [aset] [naik/turun] [harga]`\n\nContoh:\n`/alert bitcoin naik 70000`\n`/alert BBCA.JK turun 6000`",
@@ -380,12 +551,28 @@ _Gunakan /performa [aset] untuk update sinyal tertentu_
             await query.message.reply_text(teks, parse_mode="Markdown")
     elif query.data == "set_modal":
         user_id = query.from_user.id
-        current = get_user_modal(user_id)
+        current = user_manager.get_modal(user_id)
         await query.message.reply_text(
             f"💰 *Modal kamu saat ini:* Rp {current:,.0f}\n\n"
             f"Untuk mengubah, ketik:\n`/modal [jumlah]`\n\n"
             f"Contoh: `/modal 5000000`",
             parse_mode="Markdown"
+        )
+    elif query.data == "about":
+        total_users = user_manager.get_total_users()
+        total_analyses = user_manager.get_total_analyses()
+        await query.message.reply_text(
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"ℹ️  *TENTANG {BOT_NAME.upper()}*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📌 Versi: {BOT_VERSION}\n"
+            f"🏗️ Developer: Hamim\n"
+            f"🔗 GitHub: [crypto-agent](https://github.com/Hamim151821/crypto-agent)\n\n"
+            f"📊 Pengguna: {total_users} | Analisis: {total_analyses}\n\n"
+            f"🆓 Bot ini sepenuhnya *GRATIS* dan open-source.\n"
+            f"⚠️ _Bukan nasihat keuangan. DYOR._",
+            parse_mode="Markdown",
+            disable_web_page_preview=True
         )
 
 # ==============================
@@ -432,10 +619,12 @@ def main():
     app.add_handler(CommandHandler("alert", alert_cmd))
     app.add_handler(CommandHandler("alerts", alerts_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("about", about_cmd))
     app.add_handler(CommandHandler("performa", performa_cmd))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("🤖 Telegram Bot v2.0 (10-Point System) berjalan...")
+    print(f"🤖 {BOT_NAME} v{BOT_VERSION} berjalan...")
+    print(f"📊 Total users: {user_manager.get_total_users()} | Total analyses: {user_manager.get_total_analyses()}")
     app.run_polling()
 
 if __name__ == "__main__":
