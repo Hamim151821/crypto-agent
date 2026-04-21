@@ -1741,7 +1741,15 @@ ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
 1. ZERO TOLERANCE FOR COMMA DECIMALS: Anda DIWAJIBKAN 100% menggunakan tanda titik (.) sebagai pemisah desimal saat mengutip angka (Contoh: tulis 15.6, BUKAN 15,6). Blokir total penggunaan format desimal lokal dengan koma.
 2. TATA BAHASA & ANTI-BOCOR: Gunakan Bahasa Indonesia baku. HANYA alfabet Latin (A-Z). DILARANG menyebut variabel backend (seperti "Sinyal Internal").
 3. BIND SINYAL DISPLAY: Status saat ini adalah "{nama_sinyal_tabel}". Anda WAJIB menggunakan frasa "{nama_sinyal_tabel}" persis 100%.
-4. ACTION PLAN WAJIB: Anda WAJIB mengutip format Action Plan secara LENGKAP. Pertahankan format penulisan rincian menggunakan bullet points atau dashes vertikal yang bersih (contoh: - TP: ..., - SL: ...) agar mudah dibaca di UI. Jangan biarkan narasi gantung tanpa strategi ini.
+4. ACTION PLAN WAJIB: DILARANG KERAS mencampur rincian angka (TP, SL, Trigger) ke dalam paragraf narasi. WAJIB gunakan struktur bullet point menurun vertikal persis seperti template berikut agar mudah dibaca di UI Telegram:
+
+STRATEGI: [Nama Strategi]
+PANTAU KETAT: [Harga] (Jarak: [Persentase])
+TRIGGER: [Kondisi]
+TP: [Harga] | SL: [Harga] | R:R: [Rasio]
+BATAL JIKA: [Kondisi]
+
+Jangan pernah menulis rincian ini dalam bentuk paragraf atau kalimat panjang.
 5. CONFIDENCE RULE: {conf_rule}
 6. BAN ROBOTIC INTRODUCTIONS: DILARANG menggunakan kalimat pembuka kaku seperti "Berikut adalah laporan..." atau "Berdasarkan analisis...". Anda WAJIB langsung masuk ke inti poin analitis secara profesional (Contoh: "Tren makro {symbol} saat ini sedang berada dalam fase...").
 6. INSIGHT EXTRACTION (KONTRADIKSI DATA): Jika ada kontradiksi data (misal: Tren Bearish KUAT tapi MACD Bullish & Stochastic Oversold), Anda WAJIB merangkumnya sebagai "Early Pullback Signal" atau "Divergensi Awal". Jelaskan bahwa ini adalah anomali yang perlu diawasi.
@@ -1750,7 +1758,7 @@ ATURAN MUTLAK PENULISAN (ZERO TOLERANCE):
     try:
         response = client.chat.completions.create(
             model="meta-llama/llama-3.3-70b-instruct",
-            max_tokens=1500, # Diperbesar agar AI bisa merender full output tanpa terpotong di tengah jalan
+            max_tokens=4096, # Diperbesar ke 4096 agar blok ANALISIS dan DISCLAIMER tidak pernah terpotong
             messages=[{"role": "user", "content": prompt}]
         )
         result = response.choices[0].message.content
@@ -1918,8 +1926,21 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
                 lot_size = max(1, int(float(position_size) / 100))
                 position_size_display = f"{lot_size:,.0f} Lot"
             elif jenis == "Crypto" or "-USD" in symbol.upper():
-                base_coin = symbol.replace("-USD", "")
-                position_size_display = f"{float(position_size):,.4f} {base_coin}"
+                base_coin = symbol.replace("-USD", "").lower()
+                # Mapping nama lengkap CoinGecko → ticker kapital
+                CRYPTO_TICKER_MAP = {
+                    "bitcoin": "BTC", "ethereum": "ETH", "solana": "SOL",
+                    "binancecoin": "BNB", "cardano": "ADA", "ripple": "XRP",
+                    "dogecoin": "DOGE", "polkadot": "DOT", "polygon": "MATIC",
+                    "chainlink": "LINK", "avalanche-2": "AVAX", "tron": "TRX",
+                    "litecoin": "LTC", "uniswap": "UNI", "stellar": "XLM",
+                    "cosmos": "ATOM", "near": "NEAR", "aptos": "APT",
+                    "sui": "SUI", "shiba-inu": "SHIB", "pepe": "PEPE",
+                    "arbitrum": "ARB", "optimism": "OP", "injective-protocol": "INJ",
+                    "render-token": "RNDR", "fetch-ai": "FET", "the-graph": "GRT",
+                }
+                ticker = CRYPTO_TICKER_MAP.get(base_coin, base_coin.upper())
+                position_size_display = f"{float(position_size):,.4f} {ticker}"
             else:
                 position_size_display = f"{float(position_size):,.4f} Lembar"
         else:
