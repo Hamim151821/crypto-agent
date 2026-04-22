@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import os
 import sys
 import time
+import traceback
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from main import (
     get_crypto_price, get_stock_price, 
@@ -91,7 +92,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🤖  *{BOT_NAME} v{BOT_VERSION}*\n"
         f"   _10-Point Analysis System_\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"Halo, {user.first_name}! 👋\n\n"
+        f"Selamat datang! 👋\n\n"
         f"Bot ini menganalisis crypto & saham secara gratis menggunakan:\n"
         f"• 10 Indikator Teknikal (RSI, MACD, Bollinger, dll)\n"
         f"• AI-Powered Narrative & Scoring\n"
@@ -586,28 +587,55 @@ _Gunakan /performa [aset] untuk update sinyal tertentu_
         try:
             gc = get_sheets_client()
             if not gc:
-                await query.message.reply_text("⚠️ Gagal terhubung ke Google Sheets.")
+                await query.message.reply_text(
+                    "⚠️ Gagal terhubung ke Google Sheets.\n\n"
+                    "Kemungkinan penyebab:\n"
+                    "• Kredensial Google belum dikonfigurasi\n"
+                    "• Koneksi internet bermasalah\n\n"
+                    "💡 Coba lagi dalam beberapa saat."
+                )
                 return
 
             sheet_id = os.getenv("GOOGLE_SHEETS_ID")
+            if not sheet_id:
+                await query.message.reply_text("⚠️ Google Sheets ID belum dikonfigurasi.")
+                return
+
             spreadsheet = gc.open_by_key(sheet_id)
 
             try:
                 ws = spreadsheet.worksheet("Histori")
-            except:
-                await query.message.reply_text("⚠️ Belum ada data histori!")
+            except Exception:
+                await query.message.reply_text(
+                    "⚠️ Belum ada data histori!\n\n"
+                    "Histori akan tersedia setelah kamu melakukan analisis pertama.\n"
+                    "💡 Coba `/analisis bitcoin` untuk memulai!",
+                    parse_mode="Markdown"
+                )
                 return
 
             all_values = ws.get_all_values()
             if len(all_values) < 2:
-                await query.message.reply_text("⚠️ Belum ada data histori!")
+                await query.message.reply_text(
+                    "⚠️ Belum ada data histori!\n\n"
+                    "💡 Coba `/analisis bitcoin` untuk memulai!",
+                    parse_mode="Markdown"
+                )
                 return
 
             headers = all_values[0]
             data_rows = all_values[1:]
             uid_str = str(user_id)
-            uid_col = headers.index("User ID") if "User ID" in headers else -1
 
+            # Safe column lookup — gunakan dict agar tidak crash jika header berbeda
+            col_map = {h: i for i, h in enumerate(headers)}
+            uid_col = col_map.get("User ID", -1)
+            tanggal_col = col_map.get("Tanggal & Waktu", col_map.get("Tanggal", 0))
+            jenis_col = col_map.get("Jenis", -1)
+            aset_col = col_map.get("Nama Aset", col_map.get("Aset", -1))
+            sinyal_col = col_map.get("Sinyal AI", col_map.get("Sinyal", -1))
+
+            # Filter rows milik user ini
             user_rows = []
             for row in data_rows:
                 if uid_col >= 0 and uid_col < len(row) and row[uid_col] == uid_str:
@@ -624,13 +652,8 @@ _Gunakan /performa [aset] untuk update sinyal tertentu_
             recent = user_rows[-10:]
             teks = f"📋 *Histori Analisis Kamu* (terakhir {len(recent)} dari {len(user_rows)} total)\n\n"
 
-            tanggal_col = headers.index("Tanggal & Waktu") if "Tanggal & Waktu" in headers else 0
-            jenis_col = headers.index("Jenis") if "Jenis" in headers else -1
-            aset_col = headers.index("Nama Aset") if "Nama Aset" in headers else -1
-            sinyal_col = headers.index("Sinyal AI") if "Sinyal AI" in headers else -1
-
             for idx, row in enumerate(reversed(recent), 1):
-                tanggal = row[tanggal_col] if tanggal_col < len(row) else "-"
+                tanggal = row[tanggal_col] if tanggal_col >= 0 and tanggal_col < len(row) else "-"
                 jenis_val = row[jenis_col] if jenis_col >= 0 and jenis_col < len(row) else "-"
                 aset = row[aset_col] if aset_col >= 0 and aset_col < len(row) else "-"
                 sinyal = row[sinyal_col] if sinyal_col >= 0 and sinyal_col < len(row) else "-"
@@ -641,8 +664,13 @@ _Gunakan /performa [aset] untuk update sinyal tertentu_
             await query.message.reply_text(teks, parse_mode="Markdown")
 
         except Exception as e:
-            print(f"❌ Error histori button: {e}")
-            await query.message.reply_text("⚠️ Gagal mengambil histori. Coba lagi nanti!")
+            print(f"❌ Error histori button: {type(e).__name__}: {e}")
+            traceback.print_exc()
+            await query.message.reply_text(
+                f"⚠️ Gagal mengambil histori.\n\n"
+                f"Error: {type(e).__name__}\n"
+                f"Coba lagi dalam beberapa saat!"
+            )
 
 # ==============================
 # COMMAND /performa
@@ -689,30 +717,55 @@ async def histori_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         gc = get_sheets_client()
         if not gc:
-            await update.message.reply_text("⚠️ Gagal terhubung ke Google Sheets.")
+            await update.message.reply_text(
+                "⚠️ Gagal terhubung ke Google Sheets.\n\n"
+                "Kemungkinan penyebab:\n"
+                "• Kredensial Google belum dikonfigurasi\n"
+                "• Koneksi internet bermasalah\n\n"
+                "💡 Coba lagi dalam beberapa saat."
+            )
             return
 
         sheet_id = os.getenv("GOOGLE_SHEETS_ID")
+        if not sheet_id:
+            await update.message.reply_text("⚠️ Google Sheets ID belum dikonfigurasi.")
+            return
+
         spreadsheet = gc.open_by_key(sheet_id)
 
         try:
             ws = spreadsheet.worksheet("Histori")
-        except:
-            await update.message.reply_text("⚠️ Belum ada data histori!")
+        except Exception:
+            await update.message.reply_text(
+                "⚠️ Belum ada data histori!\n\n"
+                "Histori akan tersedia setelah kamu melakukan analisis pertama.\n"
+                "💡 Coba `/analisis bitcoin` untuk memulai!",
+                parse_mode="Markdown"
+            )
             return
 
         all_values = ws.get_all_values()
         if len(all_values) < 2:
-            await update.message.reply_text("⚠️ Belum ada data histori!")
+            await update.message.reply_text(
+                "⚠️ Belum ada data histori!\n\n"
+                "💡 Coba `/analisis bitcoin` untuk memulai!",
+                parse_mode="Markdown"
+            )
             return
 
         headers = all_values[0]
         data_rows = all_values[1:]
 
+        # Safe column lookup — gunakan dict agar tidak crash jika header berbeda
+        col_map = {h: i for i, h in enumerate(headers)}
+        uid_col = col_map.get("User ID", -1)
+        tanggal_col = col_map.get("Tanggal & Waktu", col_map.get("Tanggal", 0))
+        jenis_col = col_map.get("Jenis", -1)
+        aset_col = col_map.get("Nama Aset", col_map.get("Aset", -1))
+        sinyal_col = col_map.get("Sinyal AI", col_map.get("Sinyal", -1))
+
         # Filter by user_id
         uid_str = str(user_id)
-        uid_col = headers.index("User ID") if "User ID" in headers else -1
-
         user_rows = []
         for row in data_rows:
             if uid_col >= 0 and uid_col < len(row) and row[uid_col] == uid_str:
@@ -730,14 +783,8 @@ async def histori_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         recent = user_rows[-10:]
         teks = f"📋 *Histori Analisis Kamu* (terakhir {len(recent)} dari {len(user_rows)} total)\n\n"
 
-        # Cari kolom index
-        tanggal_col = headers.index("Tanggal & Waktu") if "Tanggal & Waktu" in headers else 0
-        jenis_col = headers.index("Jenis") if "Jenis" in headers else -1
-        aset_col = headers.index("Nama Aset") if "Nama Aset" in headers else -1
-        sinyal_col = headers.index("Sinyal AI") if "Sinyal AI" in headers else -1
-
         for idx, row in enumerate(reversed(recent), 1):
-            tanggal = row[tanggal_col] if tanggal_col < len(row) else "-"
+            tanggal = row[tanggal_col] if tanggal_col >= 0 and tanggal_col < len(row) else "-"
             jenis = row[jenis_col] if jenis_col >= 0 and jenis_col < len(row) else "-"
             aset = row[aset_col] if aset_col >= 0 and aset_col < len(row) else "-"
             sinyal = row[sinyal_col] if sinyal_col >= 0 and sinyal_col < len(row) else "-"
@@ -748,8 +795,13 @@ async def histori_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(teks, parse_mode="Markdown")
 
     except Exception as e:
-        print(f"❌ Error histori: {e}")
-        await update.message.reply_text("⚠️ Gagal mengambil histori. Coba lagi nanti!")
+        print(f"❌ Error histori: {type(e).__name__}: {e}")
+        traceback.print_exc()
+        await update.message.reply_text(
+            f"⚠️ Gagal mengambil histori.\n\n"
+            f"Error: {type(e).__name__}\n"
+            f"Coba lagi dalam beberapa saat!"
+        )
 
 # ==============================
 # JALANKAN BOT
