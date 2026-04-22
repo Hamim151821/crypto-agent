@@ -15,7 +15,8 @@ from main import (
     simpan_ke_sheets, simpan_ke_excel, catat_sinyal,
     hitung_performa, update_sinyal_closed,
     DEFAULT_MODAL,
-    get_sheets_client
+    get_sheets_client,
+    get_fear_greed_index, get_binance_ticker, get_binance_depth
 )
 from user_data import UserDataManager
 
@@ -27,7 +28,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 user_manager = UserDataManager()
 
 # Bot metadata
-BOT_VERSION = "2.1.0"
+BOT_VERSION = "2.2.0"
 BOT_NAME = "Crypto & Saham Agent"
 
 # ==============================
@@ -78,10 +79,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📈 Analisis Crypto", callback_data="crypto"),
          InlineKeyboardButton("📉 Analisis Saham", callback_data="saham")],
-        [InlineKeyboardButton("📊 Performa Saya", callback_data="performa"),
+        [InlineKeyboardButton("🌡️ Market Pulse", callback_data="sentiment"),
          InlineKeyboardButton("📋 Histori Saya", callback_data="histori")],
-        [InlineKeyboardButton("🔔 Set Alert", callback_data="alert"),
-         InlineKeyboardButton("📋 Alert Aktif", callback_data="lihat_alert")],
+        [InlineKeyboardButton("📊 Performa Saya", callback_data="performa"),
+         InlineKeyboardButton("🔔 Set Alert", callback_data="alert")],
         [InlineKeyboardButton("💰 Set Modal", callback_data="set_modal"),
          InlineKeyboardButton("ℹ️ Tentang Bot", callback_data="about")],
     ]
@@ -334,6 +335,7 @@ _(10-Point Analysis System)_
 
 `/start` → Menu utama
 `/analisis [aset]` → Analisis harga & sinyal (10-Point)
+`/sentiment` → Cek sentimen pasar crypto (Fear & Greed + Binance)
 `/modal [jumlah]` → Set modal trading
 `/alert [aset] [kondisi] [harga]` → Set alert harga
 `/alerts` → Lihat semua alert aktif
@@ -356,6 +358,8 @@ _(10-Point Analysis System)_
 • Deterministic Scoring (konsisten & terukur)
 • Copy Trading & Position Sizing
 • No-Trade Zone Detection
+• Fear & Greed Index (sentimen pasar crypto)
+• Binance Real-Time Price & Order Book
 
 📊 *Kuota:* {user_manager.get_remaining_requests(update.effective_user.id)} analisis tersisa (reset tiap jam)
 
@@ -383,6 +387,8 @@ async def about_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • Python 3 + python-telegram-bot
 • OpenRouter AI (Meta Llama 3.3 70B)
 • CoinGecko API (Crypto Data)
+• Binance API (Real-Time Price & Order Book)
+• Fear & Greed Index (Market Sentiment)
 • Yahoo Finance API (Saham)
 • Google Sheets (Data Logging)
 • 10-Point Deterministic Scoring Engine
@@ -397,6 +403,8 @@ async def about_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • Smart position sizing & risk management
 • Adaptive learning dari trade history
 • Support crypto & saham global
+• Fear & Greed Index (sentimen pasar crypto)
+• Binance real-time price & order book depth
 
 🆓 Bot ini sepenuhnya *GRATIS* dan open-source.
 Dibuat sebagai proyek portofolio untuk menunjukkan kemampuan di bidang AI, data engineering, dan financial technology.
@@ -579,6 +587,67 @@ _Gunakan /performa [aset] untuk update sinyal tertentu_
             parse_mode="Markdown",
             disable_web_page_preview=True
         )
+    elif query.data == "sentiment":
+        # Inline sentiment — panggil Market Pulse langsung
+        await query.message.reply_text("⏳ Mengambil data sentimen pasar crypto...")
+        try:
+            fng = get_fear_greed_index()
+            if fng:
+                fng_val = fng.get("value", 50)
+                fng_label = fng.get("label", "Neutral")
+                if fng_val <= 24:
+                    fng_emoji = "😱"
+                    fng_advice = "Pasar sangat takut → Sering jadi peluang beli (contrarian)."
+                elif fng_val <= 49:
+                    fng_emoji = "😰"
+                    fng_advice = "Pasar masih khawatir → Hati-hati, tapi pantau peluang."
+                elif fng_val <= 74:
+                    fng_emoji = "😏"
+                    fng_advice = "Pasar optimis → Momentum bagus, tapi jangan serakah."
+                else:
+                    fng_emoji = "🤑"
+                    fng_advice = "Pasar sangat serakah → Waspada koreksi/dump!"
+                filled = round(fng_val / 10)
+                bar = "█" * filled + "░" * (10 - filled)
+                fng_text = (
+                    f"🌡️ *Fear & Greed Index*\n"
+                    f"{fng_emoji} *{fng_val}/100* — {fng_label}\n"
+                    f"[{bar}]\n"
+                    f"💡 {fng_advice}\n"
+                )
+            else:
+                fng_text = "🌡️ Fear & Greed: Data tidak tersedia\n"
+
+            top_coins = [("bitcoin", "₿ BTC"), ("ethereum", "Ξ ETH"), ("solana", "◎ SOL")]
+            binance_lines = []
+            for coin_id, coin_label in top_coins:
+                ticker = get_binance_ticker(coin_id)
+                depth = get_binance_depth(coin_id)
+                if ticker:
+                    change_emoji = "🟢" if ticker["change_pct"] >= 0 else "🔴"
+                    line = f"{coin_label}: ${ticker['price']:,.2f} {change_emoji} {ticker['change_pct']:+.2f}%"
+                    if depth:
+                        line += f" | Buy:{depth['buy_pressure']}% Sell:{depth['sell_pressure']}%"
+                    binance_lines.append(line)
+
+            if binance_lines:
+                binance_text = "\n📊 *Binance Real-Time*\n" + "\n".join(binance_lines) + "\n"
+            else:
+                binance_text = "\n📊 Binance: Data tidak tersedia\n"
+
+            teks = (
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🌡️  *CRYPTO MARKET PULSE*\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"{fng_text}\n"
+                f"{binance_text}\n"
+                f"💡 Gunakan `/analisis bitcoin` untuk analisis lengkap!\n\n"
+                f"_Data dari alternative.me & Binance (gratis, real-time)_"
+            )
+            await query.message.reply_text(teks, parse_mode="Markdown")
+        except Exception as e:
+            print(f"❌ Error sentiment button: {type(e).__name__}: {e}")
+            await query.message.reply_text("⚠️ Gagal mengambil data sentimen. Coba lagi nanti!")
     elif query.data == "histori":
         # Inline histori — langsung panggil logic yang sama dengan /histori
         user_id = query.from_user.id
@@ -804,6 +873,76 @@ async def histori_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # ==============================
+# COMMAND /sentiment — Quick Market Pulse
+# ==============================
+async def sentiment_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Tampilkan Fear & Greed Index + Binance data top crypto secara cepat"""
+    await update.message.reply_text("⏳ Mengambil data sentimen pasar crypto...")
+
+    try:
+        # Fear & Greed Index
+        fng = get_fear_greed_index()
+        if fng:
+            fng_val = fng.get("value", 50)
+            fng_label = fng.get("label", "Neutral")
+            if fng_val <= 24:
+                fng_emoji = "😱"
+                fng_advice = "Pasar sangat takut → Sering jadi peluang beli (contrarian)."
+            elif fng_val <= 49:
+                fng_emoji = "😰"
+                fng_advice = "Pasar masih khawatir → Hati-hati, tapi pantau peluang."
+            elif fng_val <= 74:
+                fng_emoji = "😏"
+                fng_advice = "Pasar optimis → Momentum bagus, tapi jangan serakah."
+            else:
+                fng_emoji = "🤑"
+                fng_advice = "Pasar sangat serakah → Waspada koreksi/dump!"
+            filled = round(fng_val / 10)
+            bar = "█" * filled + "░" * (10 - filled)
+            fng_text = (
+                f"🌡️ *Fear & Greed Index*\n"
+                f"{fng_emoji} *{fng_val}/100* — {fng_label}\n"
+                f"[{bar}]\n"
+                f"💡 {fng_advice}\n"
+            )
+        else:
+            fng_text = "🌡️ Fear & Greed: Data tidak tersedia\n"
+
+        # Binance data untuk BTC & ETH
+        top_coins = [("bitcoin", "₿ BTC"), ("ethereum", "Ξ ETH"), ("solana", "◎ SOL")]
+        binance_lines = []
+        for coin_id, coin_label in top_coins:
+            ticker = get_binance_ticker(coin_id)
+            depth = get_binance_depth(coin_id)
+            if ticker:
+                change_emoji = "🟢" if ticker["change_pct"] >= 0 else "🔴"
+                line = f"{coin_label}: ${ticker['price']:,.2f} {change_emoji} {ticker['change_pct']:+.2f}%"
+                if depth:
+                    line += f" | Buy:{depth['buy_pressure']}% Sell:{depth['sell_pressure']}%"
+                binance_lines.append(line)
+
+        if binance_lines:
+            binance_text = "\n📊 *Binance Real-Time*\n" + "\n".join(binance_lines) + "\n"
+        else:
+            binance_text = "\n📊 Binance: Data tidak tersedia\n"
+
+        teks = (
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🌡️  *CRYPTO MARKET PULSE*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"{fng_text}\n"
+            f"{binance_text}\n"
+            f"💡 Gunakan `/analisis bitcoin` untuk analisis lengkap!\n\n"
+            f"_Data dari alternative.me & Binance (gratis, real-time)_"
+        )
+        await update.message.reply_text(teks, parse_mode="Markdown")
+
+    except Exception as e:
+        print(f"❌ Error sentiment: {type(e).__name__}: {e}")
+        traceback.print_exc()
+        await update.message.reply_text("⚠️ Gagal mengambil data sentimen. Coba lagi nanti!")
+
+# ==============================
 # JALANKAN BOT
 # ==============================
 def main():
@@ -818,6 +957,7 @@ def main():
     app.add_handler(CommandHandler("about", about_cmd))
     app.add_handler(CommandHandler("performa", performa_cmd))
     app.add_handler(CommandHandler("histori", histori_cmd))
+    app.add_handler(CommandHandler("sentiment", sentiment_cmd))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     print(f"🤖 {BOT_NAME} v{BOT_VERSION} berjalan...")

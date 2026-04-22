@@ -66,6 +66,141 @@ def get_crypto_price(nama_crypto):
         return None
 
 # ==============================
+# COINGECKO → BINANCE SYMBOL MAPPING
+# ==============================
+COINGECKO_TO_BINANCE = {
+    "bitcoin": "BTCUSDT", "ethereum": "ETHUSDT", "solana": "SOLUSDT",
+    "binancecoin": "BNBUSDT", "cardano": "ADAUSDT", "ripple": "XRPUSDT",
+    "dogecoin": "DOGEUSDT", "polkadot": "DOTUSDT", "polygon": "MATICUSDT",
+    "chainlink": "LINKUSDT", "avalanche-2": "AVAXUSDT", "tron": "TRXUSDT",
+    "litecoin": "LTCUSDT", "uniswap": "UNIUSDT", "stellar": "XLMUSDT",
+    "cosmos": "ATOMUSDT", "near": "NEARUSDT", "aptos": "APTUSDT",
+    "sui": "SUIUSDT", "shiba-inu": "SHIBUSDT", "pepe": "PEPEUSDT",
+    "arbitrum": "ARBUSDT", "optimism": "OPUSDT", "injective-protocol": "INJUSDT",
+    "render-token": "RENDERUSDT", "fetch-ai": "FETUSDT", "the-graph": "GRTUSDT",
+    "toncoin": "TONUSDT", "internet-computer": "ICPUSDT", "hedera-hashgraph": "HBARUSDT",
+    "filecoin": "FILUSDT", "aave": "AAVEUSDT", "maker": "MKRUSDT",
+}
+
+# ==============================
+# FEAR & GREED INDEX (alternative.me)
+# ==============================
+def get_fear_greed_index():
+    """
+    Ambil Crypto Fear & Greed Index dari alternative.me (gratis, tanpa API key).
+    Returns: {"value": 25, "label": "Extreme Fear", "timestamp": "..."} atau None
+    """
+    try:
+        url = "https://api.alternative.me/fng/"
+        params = {"limit": 1}
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+
+        if "data" in data and len(data["data"]) > 0:
+            fng = data["data"][0]
+            return {
+                "value": int(fng.get("value", 50)),
+                "label": fng.get("value_classification", "Neutral"),
+                "timestamp": fng.get("timestamp", "")
+            }
+        return None
+    except Exception as e:
+        print(f"⚠️ Error Fear & Greed Index: {e}")
+        return None
+
+# ==============================
+# BINANCE 24HR TICKER (gratis, tanpa API key)
+# ==============================
+def get_binance_ticker(coingecko_id):
+    """
+    Ambil data ticker 24 jam dari Binance public API.
+    Returns: {"price": float, "volume_24h": float, "change_pct": float,
+              "high_24h": float, "low_24h": float, "trades_24h": int} atau None
+    """
+    binance_symbol = COINGECKO_TO_BINANCE.get(coingecko_id.lower())
+    if not binance_symbol:
+        return None
+
+    try:
+        url = f"https://api.binance.com/api/v3/ticker/24hr"
+        params = {"symbol": binance_symbol}
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+
+        if "symbol" not in data:
+            return None
+
+        return {
+            "symbol": data["symbol"],
+            "price": float(data.get("lastPrice", 0)),
+            "volume_24h": float(data.get("quoteVolume", 0)),
+            "change_pct": float(data.get("priceChangePercent", 0)),
+            "high_24h": float(data.get("highPrice", 0)),
+            "low_24h": float(data.get("lowPrice", 0)),
+            "trades_24h": int(data.get("count", 0)),
+        }
+    except Exception as e:
+        print(f"⚠️ Error Binance ticker: {e}")
+        return None
+
+# ==============================
+# BINANCE ORDER BOOK DEPTH (gratis, tanpa API key)
+# ==============================
+def get_binance_depth(coingecko_id, limit=20):
+    """
+    Ambil order book depth (bids & asks) dari Binance.
+    Menghitung rasio tekanan beli vs jual.
+    Returns: {"buy_pressure": float, "sell_pressure": float, "status": str,
+              "total_bid_vol": float, "total_ask_vol": float} atau None
+    """
+    binance_symbol = COINGECKO_TO_BINANCE.get(coingecko_id.lower())
+    if not binance_symbol:
+        return None
+
+    try:
+        url = f"https://api.binance.com/api/v3/depth"
+        params = {"symbol": binance_symbol, "limit": limit}
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+
+        if "bids" not in data or "asks" not in data:
+            return None
+
+        # Hitung total volume bids (beli) dan asks (jual)
+        total_bid_vol = sum(float(bid[1]) for bid in data["bids"])
+        total_ask_vol = sum(float(ask[1]) for ask in data["asks"])
+
+        total = total_bid_vol + total_ask_vol
+        if total == 0:
+            return None
+
+        buy_pct = round(total_bid_vol / total * 100, 1)
+        sell_pct = round(total_ask_vol / total * 100, 1)
+
+        # Tentukan status tekanan
+        if buy_pct >= 60:
+            status = "STRONG BUY PRESSURE"
+        elif buy_pct >= 55:
+            status = "MODERATE BUY PRESSURE"
+        elif sell_pct >= 60:
+            status = "STRONG SELL PRESSURE"
+        elif sell_pct >= 55:
+            status = "MODERATE SELL PRESSURE"
+        else:
+            status = "BALANCED"
+
+        return {
+            "buy_pressure": buy_pct,
+            "sell_pressure": sell_pct,
+            "status": status,
+            "total_bid_vol": round(total_bid_vol, 4),
+            "total_ask_vol": round(total_ask_vol, 4),
+        }
+    except Exception as e:
+        print(f"⚠️ Error Binance depth: {e}")
+        return None
+
+# ==============================
 # FUNGSI AMBIL DATA SAHAM
 # ==============================
 def get_stock_price(kode_saham):
@@ -1789,7 +1924,8 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
                             sinyal, total_skor, confidence, entry, sl, tp,
                             risk_level, rr_ratio, modal, position_size, alasan,
                             market_condition, skor_detail, weights, jenis, no_trade,
-                            is_early_entry=False, risk_metrics=None, data_quality=None):
+                            is_early_entry=False, risk_metrics=None, data_quality=None,
+                            fear_greed=None, binance_data=None, depth_data=None):
     """Format output sesuai template 10-point system"""
 
     # --- EARLY GLOBAL PATCH (UI SYNC) ---
@@ -2014,6 +2150,69 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
     if 'sl_final_display' not in locals(): sl_final_display = sl_display
     # --------------------------------------------------------------------
 
+    # === MARKET PULSE SECTION (Fear & Greed + Binance) ===
+    market_pulse_section = ""
+    if jenis == "Crypto":
+        pulse_lines = []
+
+        # Fear & Greed Index
+        if fear_greed:
+            fng_val = fear_greed.get("value", 50)
+            fng_label = fear_greed.get("label", "Neutral")
+            # Emoji berdasarkan level
+            if fng_val <= 24:
+                fng_emoji = "😱"
+            elif fng_val <= 49:
+                fng_emoji = "😰"
+            elif fng_val <= 74:
+                fng_emoji = "😏"
+            else:
+                fng_emoji = "🤑"
+            # Visual bar (10 chars)
+            filled = round(fng_val / 10)
+            bar = "█" * filled + "░" * (10 - filled)
+            pulse_lines.append(f"• Fear & Greed:  {fng_emoji} {fng_val}/100 ({fng_label}) [{bar}]")
+
+        # Binance Price & Volume
+        if binance_data:
+            bn_price = binance_data.get("price", 0)
+            bn_change = binance_data.get("change_pct", 0)
+            bn_vol = binance_data.get("volume_24h", 0)
+            bn_high = binance_data.get("high_24h", 0)
+            bn_low = binance_data.get("low_24h", 0)
+            bn_trades = binance_data.get("trades_24h", 0)
+            change_emoji = "🟢" if bn_change >= 0 else "🔴"
+            pulse_lines.append(f"• Binance Price: ${bn_price:,.2f} {change_emoji} {bn_change:+.2f}%")
+            pulse_lines.append(f"• 24h Range:     ${bn_low:,.2f} — ${bn_high:,.2f}")
+            if bn_vol > 0:
+                if bn_vol >= 1_000_000_000:
+                    vol_str = f"${bn_vol / 1_000_000_000:,.2f}B"
+                elif bn_vol >= 1_000_000:
+                    vol_str = f"${bn_vol / 1_000_000:,.2f}M"
+                else:
+                    vol_str = f"${bn_vol:,.0f}"
+                pulse_lines.append(f"• 24h Volume:    {vol_str} USDT ({bn_trades:,} trades)")
+
+        # Order Book Depth
+        if depth_data:
+            buy_pct = depth_data.get("buy_pressure", 50)
+            sell_pct = depth_data.get("sell_pressure", 50)
+            depth_status = depth_data.get("status", "BALANCED")
+            # Visual bar beli vs jual
+            buy_blocks = round(buy_pct / 10)
+            sell_blocks = 10 - buy_blocks
+            depth_bar = "🟩" * buy_blocks + "🟥" * sell_blocks
+            pulse_lines.append(f"• Order Book:    Buy {buy_pct}% | Sell {sell_pct}% → {depth_status}")
+            pulse_lines.append(f"                 {depth_bar}")
+
+        if pulse_lines:
+            market_pulse_section = (
+                "\n============================================================\n"
+                "🌡️ MARKET PULSE (Real-Time)\n"
+                "============================================================\n"
+                + "\n".join(pulse_lines) + "\n"
+            )
+
     output = f"""📊 ANALISIS {symbol.upper()} | Data Quality: {data_quality_display}
 💰 Harga: {harga_display}
 🏪 Market: {market_condition} | ADX: {adx} ({adx_status})
@@ -2029,7 +2228,7 @@ def format_analysis_output(symbol, harga, harga_idr, indikator, sentimen,
 • Volume:       {indikator.get('volume_status', 'N/A')} (rasio: {indikator.get('volume_ratio', 'N/A')}x) | Skor: {skor_detail.get('volume', 0)}
 • OBV Flow:     {indikator.get('obv_divergence', 'N/A')} | OBV: {indikator.get('obv', 0):,.0f}
 • ATR:          {atr:.4f} | VWAP: {vwap:.4f}
-
+{market_pulse_section}
 ============================================================
 🎯 LEVEL & TARGET
 ============================================================
@@ -2789,6 +2988,24 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
     # DIMASUKKAN ke dalam f-string pembentuk tabel laporan (Risk Management & Position Sizing).
     # -----------------------------------------------------
 
+    # === AMBIL DATA MARKET PULSE (hanya untuk Crypto) ===
+    fear_greed = None
+    binance_data = None
+    depth_data = None
+    if jenis == "Crypto":
+        try:
+            fear_greed = get_fear_greed_index()
+        except Exception as e:
+            print(f"⚠️ Fear & Greed gagal: {e}")
+        try:
+            binance_data = get_binance_ticker(symbol)
+        except Exception as e:
+            print(f"⚠️ Binance ticker gagal: {e}")
+        try:
+            depth_data = get_binance_depth(symbol)
+        except Exception as e:
+            print(f"⚠️ Binance depth gagal: {e}")
+
     # AI Reasoning (LLM call — hanya untuk penjelasan)
     # Gunakan ui_rr karena rr_display is undefined
     alasan = get_ai_reasoning(
@@ -2822,7 +3039,10 @@ def analisis_ai_v2(symbol, jenis, data_harga, berita, indikator, modal=DEFAULT_M
         no_trade=no_trade,
         is_early_entry=is_early_entry,
         risk_metrics=risk_metrics,
-        data_quality=data_quality
+        data_quality=data_quality,
+        fear_greed=fear_greed,
+        binance_data=binance_data,
+        depth_data=depth_data
     )
     
     # ============================================================
