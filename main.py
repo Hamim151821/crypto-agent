@@ -1,4 +1,4 @@
-from openai import OpenAI
+﻿from openai import OpenAI
 import requests
 from dotenv import load_dotenv
 import os
@@ -114,6 +114,7 @@ def get_fear_greed_index():
 def get_binance_ticker(coingecko_id):
     """
     Ambil data ticker 24 jam dari Binance public API.
+    Mencoba beberapa endpoint untuk redundansi jika salah satu diblokir.
     Returns: {"price": float, "volume_24h": float, "change_pct": float,
               "high_24h": float, "low_24h": float, "trades_24h": int} atau None
     """
@@ -121,27 +122,40 @@ def get_binance_ticker(coingecko_id):
     if not binance_symbol:
         return None
 
-    try:
-        url = f"https://api.binance.com/api/v3/ticker/24hr"
-        params = {"symbol": binance_symbol}
-        response = requests.get(url, params=params, timeout=10)
-        data = response.json()
+    binance_hosts = [
+        "https://api.binance.com",
+        "https://api1.binance.com",
+        "https://api2.binance.com",
+        "https://api3.binance.com",
+    ]
 
-        if "symbol" not in data:
-            return None
+    for host in binance_hosts:
+        try:
+            url = f"{host}/api/v3/ticker/24hr"
+            params = {"symbol": binance_symbol}
+            response = requests.get(url, params=params, timeout=8)
+            if response.status_code != 200:
+                continue
+            data = response.json()
 
-        return {
-            "symbol": data["symbol"],
-            "price": float(data.get("lastPrice", 0)),
-            "volume_24h": float(data.get("quoteVolume", 0)),
-            "change_pct": float(data.get("priceChangePercent", 0)),
-            "high_24h": float(data.get("highPrice", 0)),
-            "low_24h": float(data.get("lowPrice", 0)),
-            "trades_24h": int(data.get("count", 0)),
-        }
-    except Exception as e:
-        print(f"⚠️ Error Binance ticker: {e}")
-        return None
+            if "symbol" not in data:
+                continue
+
+            return {
+                "symbol": data["symbol"],
+                "price": float(data.get("lastPrice", 0)),
+                "volume_24h": float(data.get("quoteVolume", 0)),
+                "change_pct": float(data.get("priceChangePercent", 0)),
+                "high_24h": float(data.get("highPrice", 0)),
+                "low_24h": float(data.get("lowPrice", 0)),
+                "trades_24h": int(data.get("count", 0)),
+            }
+        except Exception as e:
+            print(f"⚠️ Binance ticker gagal ({host}): {e}")
+            continue
+
+    print(f"⚠️ Semua endpoint Binance tidak tersedia untuk {coingecko_id}")
+    return None
 
 # ==============================
 # BINANCE ORDER BOOK DEPTH (gratis, tanpa API key)
@@ -149,7 +163,7 @@ def get_binance_ticker(coingecko_id):
 def get_binance_depth(coingecko_id, limit=20):
     """
     Ambil order book depth (bids & asks) dari Binance.
-    Menghitung rasio tekanan beli vs jual.
+    Mencoba beberapa endpoint untuk redundansi.
     Returns: {"buy_pressure": float, "sell_pressure": float, "status": str,
               "total_bid_vol": float, "total_ask_vol": float} atau None
     """
@@ -157,48 +171,89 @@ def get_binance_depth(coingecko_id, limit=20):
     if not binance_symbol:
         return None
 
+    binance_hosts = [
+        "https://api.binance.com",
+        "https://api1.binance.com",
+        "https://api2.binance.com",
+        "https://api3.binance.com",
+    ]
+
+    for host in binance_hosts:
+        try:
+            url = f"{host}/api/v3/depth"
+            params = {"symbol": binance_symbol, "limit": limit}
+            response = requests.get(url, params=params, timeout=8)
+            if response.status_code != 200:
+                continue
+            data = response.json()
+
+            if "bids" not in data or "asks" not in data:
+                continue
+
+            total_bid_vol = sum(float(bid[1]) for bid in data["bids"])
+            total_ask_vol = sum(float(ask[1]) for ask in data["asks"])
+
+            total = total_bid_vol + total_ask_vol
+            if total == 0:
+                continue
+
+            buy_pct = round(total_bid_vol / total * 100, 1)
+            sell_pct = round(total_ask_vol / total * 100, 1)
+
+            if buy_pct >= 60:
+                status = "STRONG BUY PRESSURE"
+            elif buy_pct >= 55:
+                status = "MODERATE BUY PRESSURE"
+            elif sell_pct >= 60:
+                status = "STRONG SELL PRESSURE"
+            elif sell_pct >= 55:
+                status = "MODERATE SELL PRESSURE"
+            else:
+                status = "BALANCED"
+
+            return {
+                "buy_pressure": buy_pct,
+                "sell_pressure": sell_pct,
+                "status": status,
+                "total_bid_vol": round(total_bid_vol, 4),
+                "total_ask_vol": round(total_ask_vol, 4),
+            }
+        except Exception as e:
+            print(f"⚠️ Binance depth gagal ({host}): {e}")
+            continue
+
+    print(f"⚠️ Semua endpoint Binance depth tidak tersedia untuk {coingecko_id}")
+    return None
+
+
+def get_coingecko_market_ticker(coin_ids):
+    """
+    Fallback: Ambil harga + perubahan 24h dari CoinGecko untuk beberapa koin sekaligus.
+    coin_ids: list of coingecko ids, misal ["bitcoin", "ethereum", "solana"]
+    Returns: dict {coin_id: {"price": float, "change_pct": float}} atau {}
+    """
     try:
-        url = f"https://api.binance.com/api/v3/depth"
-        params = {"symbol": binance_symbol, "limit": limit}
-        response = requests.get(url, params=params, timeout=10)
-        data = response.json()
-
-        if "bids" not in data or "asks" not in data:
-            return None
-
-        # Hitung total volume bids (beli) dan asks (jual)
-        total_bid_vol = sum(float(bid[1]) for bid in data["bids"])
-        total_ask_vol = sum(float(ask[1]) for ask in data["asks"])
-
-        total = total_bid_vol + total_ask_vol
-        if total == 0:
-            return None
-
-        buy_pct = round(total_bid_vol / total * 100, 1)
-        sell_pct = round(total_ask_vol / total * 100, 1)
-
-        # Tentukan status tekanan
-        if buy_pct >= 60:
-            status = "STRONG BUY PRESSURE"
-        elif buy_pct >= 55:
-            status = "MODERATE BUY PRESSURE"
-        elif sell_pct >= 60:
-            status = "STRONG SELL PRESSURE"
-        elif sell_pct >= 55:
-            status = "MODERATE SELL PRESSURE"
-        else:
-            status = "BALANCED"
-
-        return {
-            "buy_pressure": buy_pct,
-            "sell_pressure": sell_pct,
-            "status": status,
-            "total_bid_vol": round(total_bid_vol, 4),
-            "total_ask_vol": round(total_ask_vol, 4),
+        ids_str = ",".join(coin_ids)
+        url = "https://api.coingecko.com/api/v3/simple/price"
+        params = {
+            "ids": ids_str,
+            "vs_currencies": "usd",
+            "include_24hr_change": "true"
         }
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        data = response.json()
+        result = {}
+        for coin_id in coin_ids:
+            if coin_id in data:
+                result[coin_id] = {
+                    "price": data[coin_id].get("usd", 0),
+                    "change_pct": data[coin_id].get("usd_24h_change", 0),
+                }
+        return result
     except Exception as e:
-        print(f"⚠️ Error Binance depth: {e}")
-        return None
+        print(f"⚠️ CoinGecko market ticker error: {e}")
+        return {}
 
 # ==============================
 # FUNGSI AMBIL DATA SAHAM
@@ -3812,6 +3867,414 @@ def main():
             break
         else:
             print("❌ Pilihan tidak valid!")
+
+# ============================================================
+# MONEY FLOW ANALYSIS — Value Transaksi & Bandarmology
+# ============================================================
+
+# Daftar saham IDX yang di-cover oleh IDX API foreign flow
+IDX_SAHAM_LIST = [
+    "BBCA.JK","BBRI.JK","BMRI.JK","BBNI.JK","TLKM.JK",
+    "ASII.JK","GOTO.JK","BYAN.JK","UNVR.JK","HMSP.JK",
+    "ICBP.JK","INDF.JK","KLBF.JK","BSDE.JK","CPIN.JK",
+    "EXCL.JK","SMGR.JK","PTBA.JK","ANTM.JK","MNCN.JK",
+    "MDKA.JK","PGAS.JK","ERAA.JK","ACES.JK","SIDO.JK",
+    "ESSA.JK","BRIS.JK","ADRO.JK","INCO.JK","JSMR.JK",
+]
+
+# LQ45 tambahan untuk screener
+BSJP_WATCHLIST = IDX_SAHAM_LIST + [
+    "BBTN.JK","INKP.JK","TKIM.JK","MAPI.JK","PWON.JK",
+    "SMRA.JK","LPKR.JK","WIKA.JK","PTPP.JK","WSKT.JK",
+]
+
+
+def get_idx_foreign_flow(kode_saham):
+    """
+    Ambil Net Foreign Buy/Sell dari IDX public API (tanpa API key).
+    Returns: dict dengan foreignBuy, foreignSell, netForeign, atau None
+    """
+    # Hapus .JK suffix untuk IDX API
+    ticker = kode_saham.replace(".JK", "").upper()
+    try:
+        url = f"https://api.idx.co.id/api/v1/stocksnapshot"
+        params = {"stockCode": ticker, "language": "id"}
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        }
+        resp = requests.get(url, params=params, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            raise Exception(f"HTTP {resp.status_code}")
+        data = resp.json()
+
+        # IDX API returns list, ambil item pertama
+        if isinstance(data, list) and len(data) > 0:
+            item = data[0]
+        elif isinstance(data, dict):
+            item = data
+        else:
+            return None
+
+        # Normalisasi key (IDX kadang camelCase, kadang snake_case)
+        foreign_buy  = float(item.get("foreignBuy",  item.get("foreign_buy",  0)) or 0)
+        foreign_sell = float(item.get("foreignSell", item.get("foreign_sell", 0)) or 0)
+        net_foreign  = float(item.get("netForeign",  item.get("net_foreign",  foreign_buy - foreign_sell)) or 0)
+
+        if foreign_buy == 0 and foreign_sell == 0:
+            return None   # Data kosong, tidak usable
+
+        if net_foreign > 0:
+            status = "NET BUY 🟢"
+            interpretasi = "Asing masuk — tanda akumulasi"
+        elif net_foreign < 0:
+            status = "NET SELL 🔴"
+            interpretasi = "Asing keluar — tanda distribusi"
+        else:
+            status = "NEUTRAL ⚪"
+            interpretasi = "Aliran asing seimbang"
+
+        return {
+            "foreign_buy":  foreign_buy,
+            "foreign_sell": foreign_sell,
+            "net_foreign":  net_foreign,
+            "status":       status,
+            "interpretasi": interpretasi,
+            "source":       "IDX API",
+        }
+    except Exception as e:
+        print(f"⚠️ IDX Foreign Flow gagal ({kode_saham}): {e}")
+        return None
+
+
+def get_money_flow_analysis(kode_saham):
+    """
+    Analisis lengkap money flow untuk saham Indonesia:
+    - Value Transaksi harian vs rata-rata (dari Yahoo Finance)
+    - MFI (Money Flow Index, ta library)
+    - CMF (Chaikin Money Flow, ta library)
+    - OBV trend
+    - Net Foreign Flow (IDX API)
+    - Kesimpulan: Akumulasi / Distribusi / Netral
+    Returns: dict atau None
+    """
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{kode_saham}"
+        params = {"interval": "1d", "range": "3mo"}
+        headers = {"User-Agent": "Mozilla/5.0"}
+        resp = requests.get(url, params=params, headers=headers, timeout=15)
+        data = resp.json()
+
+        if "chart" not in data or not data["chart"]["result"]:
+            return None
+
+        result = data["chart"]["result"][0]
+        quotes = result.get("indicators", {}).get("quote", [{}])[0]
+        timestamps = result.get("timestamp", [])
+
+        closes  = quotes.get("close", [])
+        highs   = quotes.get("high", [])
+        lows    = quotes.get("low", [])
+        volumes = quotes.get("volume", [])
+
+        # Bersihkan data
+        valid = []
+        for i in range(len(closes)):
+            if closes[i] is not None and volumes[i] is not None and volumes[i] > 0:
+                valid.append({
+                    "ts":     timestamps[i] if i < len(timestamps) else 0,
+                    "close":  closes[i],
+                    "high":   highs[i]   if i < len(highs)   and highs[i]   else closes[i],
+                    "low":    lows[i]    if i < len(lows)    and lows[i]    else closes[i],
+                    "volume": volumes[i],
+                })
+
+        if len(valid) < 20:
+            return None
+
+        df = pd.DataFrame(valid)
+
+        # ── Value Transaksi (Rupiah) ──────────────────────────
+        df["value"] = df["close"] * df["volume"]
+        val_today    = df["value"].iloc[-1]
+        val_avg_20   = df["value"].iloc[-20:].mean()
+        val_ratio    = round(val_today / val_avg_20, 2) if val_avg_20 > 0 else 1.0
+
+        # Klasifikasi value
+        if val_ratio >= 2.5:
+            val_status = "🔥 VERY HIGH (>250% avg)"
+        elif val_ratio >= 1.5:
+            val_status = "⬆️ HIGH (>150% avg)"
+        elif val_ratio >= 0.8:
+            val_status = "➡️ NORMAL"
+        else:
+            val_status = "⬇️ LOW (<80% avg)"
+
+        # ── MFI (Money Flow Index) ────────────────────────────
+        mfi_series = ta.volume.MFIIndicator(
+            df["high"], df["low"], df["close"], df["volume"], window=14
+        ).money_flow_index()
+        mfi = round(float(mfi_series.iloc[-1]), 1) if pd.notna(mfi_series.iloc[-1]) else 50.0
+
+        if mfi >= 80:
+            mfi_label = "OVERBOUGHT 🔴"
+        elif mfi >= 60:
+            mfi_label = "BULLISH 🟢"
+        elif mfi <= 20:
+            mfi_label = "OVERSOLD 🟢 (reversal?)"
+        elif mfi <= 40:
+            mfi_label = "BEARISH 🔴"
+        else:
+            mfi_label = "NETRAL ⚪"
+
+        # ── CMF (Chaikin Money Flow) ──────────────────────────
+        cmf_series = ta.volume.ChaikinMoneyFlowIndicator(
+            df["high"], df["low"], df["close"], df["volume"], window=20
+        ).chaikin_money_flow()
+        cmf = round(float(cmf_series.iloc[-1]), 4) if pd.notna(cmf_series.iloc[-1]) else 0.0
+
+        if cmf >= 0.15:
+            cmf_label = "STRONG INFLOW 🟢"
+        elif cmf >= 0.05:
+            cmf_label = "INFLOW 🟢"
+        elif cmf <= -0.15:
+            cmf_label = "STRONG OUTFLOW 🔴"
+        elif cmf <= -0.05:
+            cmf_label = "OUTFLOW 🔴"
+        else:
+            cmf_label = "NETRAL ⚪"
+
+        # ── OBV Trend (5 hari) ───────────────────────────────
+        obv_series = ta.volume.OnBalanceVolumeIndicator(df["close"], df["volume"]).on_balance_volume()
+        obv_now    = float(obv_series.iloc[-1])
+        obv_5d_ago = float(obv_series.iloc[-5]) if len(obv_series) >= 5 else obv_now
+        obv_trend  = "NAIK 🟢" if obv_now > obv_5d_ago else "TURUN 🔴"
+
+        # ── Volume Spike ─────────────────────────────────────
+        vol_today   = df["volume"].iloc[-1]
+        vol_avg_20  = df["volume"].iloc[-20:].mean()
+        vol_ratio   = round(vol_today / vol_avg_20, 2) if vol_avg_20 > 0 else 1.0
+        vol_spike   = vol_ratio >= 1.5
+
+        # ── Net Foreign Flow (IDX) ───────────────────────────
+        foreign = get_idx_foreign_flow(kode_saham)
+
+        # ── Skor Akumulasi / Distribusi ──────────────────────
+        skor = 0
+        if mfi >= 55:       skor += 1
+        if cmf >= 0.05:     skor += 1
+        if obv_now > obv_5d_ago: skor += 1
+        if val_ratio >= 1.3: skor += 1
+        if foreign and foreign["net_foreign"] > 0: skor += 2   # bobot lebih besar
+        if foreign and foreign["net_foreign"] < 0: skor -= 2
+
+        if skor >= 4:
+            kesimpulan = "🟢 AKUMULASI KUAT — Uang besar masuk"
+        elif skor >= 2:
+            kesimpulan = "🟡 AKUMULASI LEMAH — Pantau terus"
+        elif skor <= -1:
+            kesimpulan = "🔴 DISTRIBUSI — Uang besar keluar"
+        else:
+            kesimpulan = "⚪ NETRAL — Tidak ada sinyal kuat"
+
+        return {
+            # Value
+            "value_today":   val_today,
+            "value_avg_20d": val_avg_20,
+            "value_ratio":   val_ratio,
+            "value_status":  val_status,
+            # MFI
+            "mfi":       mfi,
+            "mfi_label": mfi_label,
+            # CMF
+            "cmf":       cmf,
+            "cmf_label": cmf_label,
+            # OBV
+            "obv_trend": obv_trend,
+            # Volume
+            "vol_ratio": vol_ratio,
+            "vol_spike": vol_spike,
+            # Foreign
+            "foreign":   foreign,
+            # Kesimpulan
+            "skor":      skor,
+            "kesimpulan":kesimpulan,
+        }
+
+    except Exception as e:
+        print(f"⚠️ Money flow error ({kode_saham}): {e}")
+        return None
+
+
+# ============================================================
+# BSJP SCREENER — Beli Sore Jual Pagi
+# ============================================================
+
+def hitung_bsjp_score(kode_saham):
+    """
+    Hitung skor BSJP untuk satu saham.
+    Kriteria utama: value tinggi, volume spike, candle bullish,
+    trend naik pendek, RSI tidak overbought, MFI menguat.
+    Returns: (skor: int, detail: dict) atau (None, None)
+    """
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{kode_saham}"
+        params = {"interval": "1d", "range": "3mo"}
+        headers = {"User-Agent": "Mozilla/5.0"}
+        resp = requests.get(url, params=params, headers=headers, timeout=12)
+        data = resp.json()
+
+        if "chart" not in data or not data["chart"]["result"]:
+            return None, None
+
+        result = data["chart"]["result"][0]
+        quotes  = result.get("indicators", {}).get("quote", [{}])[0]
+        closes  = [x for x in quotes.get("close",  []) if x]
+        volumes = [x for x in quotes.get("volume", []) if x]
+        highs   = [x for x in quotes.get("high",   []) if x]
+        lows    = [x for x in quotes.get("low",    []) if x]
+        opens   = [x for x in quotes.get("open",   []) if x]
+
+        if len(closes) < 25 or len(volumes) < 20:
+            return None, None
+
+        df = pd.DataFrame({
+            "close":  closes,
+            "volume": volumes,
+            "high":   highs[:len(closes)],
+            "low":    lows[:len(closes)],
+            "open":   opens[:len(closes)] if opens else closes,
+        })
+
+        skor       = 0
+        alasan     = []
+        peringatan = []
+
+        # 1. Value Transaksi — likuiditas minimum Rp 20 M/hari
+        val_today  = df["close"].iloc[-1] * df["volume"].iloc[-1]
+        val_avg_20 = (df["close"] * df["volume"]).iloc[-20:].mean()
+        val_ratio  = val_today / val_avg_20 if val_avg_20 > 0 else 1.0
+
+        if val_today < 20_000_000_000:          # < 20 miliar, skip
+            return None, None
+        if val_ratio >= 1.5:
+            skor += 2
+            alasan.append(f"Value {val_ratio:.1f}x avg 🔥")
+        elif val_ratio >= 1.1:
+            skor += 1
+            alasan.append(f"Value {val_ratio:.1f}x avg ↑")
+
+        # 2. Volume Spike
+        vol_ratio = df["volume"].iloc[-1] / df["volume"].iloc[-20:].mean()
+        if vol_ratio >= 2.0:
+            skor += 2
+            alasan.append(f"Vol {vol_ratio:.1f}x avg 🔥")
+        elif vol_ratio >= 1.5:
+            skor += 1
+            alasan.append(f"Vol {vol_ratio:.1f}x avg ↑")
+        else:
+            peringatan.append(f"Vol normal ({vol_ratio:.1f}x)")
+
+        # 3. Candle bullish (close > open hari ini)
+        if len(df["open"]) > 0:
+            c = df["close"].iloc[-1]
+            o = df["open"].iloc[-1]
+            body_pct = (c - o) / o * 100 if o > 0 else 0
+            if body_pct >= 1.0:
+                skor += 2
+                alasan.append(f"Candle bullish +{body_pct:.1f}% 🕯️")
+            elif body_pct >= 0:
+                skor += 1
+                alasan.append("Candle hijau tipis")
+            else:
+                peringatan.append(f"Candle merah ({body_pct:.1f}%)")
+
+        # 4. Price di atas MA5 & MA20
+        ma5  = df["close"].iloc[-5:].mean()
+        ma20 = df["close"].iloc[-20:].mean()
+        price = df["close"].iloc[-1]
+        if price > ma5 and price > ma20:
+            skor += 2
+            alasan.append("Harga > MA5 & MA20 ✅")
+        elif price > ma20:
+            skor += 1
+            alasan.append("Harga > MA20")
+        else:
+            peringatan.append("Harga < MA20 ⚠️")
+
+        # 5. RSI (tidak overbought, tidak terlalu oversold)
+        rsi_s = ta.momentum.RSIIndicator(df["close"], window=14).rsi()
+        rsi   = float(rsi_s.iloc[-1]) if pd.notna(rsi_s.iloc[-1]) else 50.0
+        if 45 <= rsi <= 65:
+            skor += 2
+            alasan.append(f"RSI ideal {rsi:.0f} ✅")
+        elif 35 <= rsi < 45:
+            skor += 1
+            alasan.append(f"RSI rendah {rsi:.0f} (pantau)")
+        elif rsi > 70:
+            skor -= 1
+            peringatan.append(f"RSI overbought {rsi:.0f} ⚠️")
+
+        # 6. MFI (uang masuk?)
+        mfi_s = ta.volume.MFIIndicator(df["high"], df["low"], df["close"], df["volume"], window=14).money_flow_index()
+        mfi   = float(mfi_s.iloc[-1]) if pd.notna(mfi_s.iloc[-1]) else 50.0
+        if mfi >= 55:
+            skor += 2
+            alasan.append(f"MFI {mfi:.0f} bullish 💰")
+        elif mfi >= 45:
+            skor += 1
+            alasan.append(f"MFI {mfi:.0f} netral")
+        else:
+            peringatan.append(f"MFI {mfi:.0f} outflow ⚠️")
+
+        # 7. Net Foreign Buy (IDX API, bonus besar jika tersedia)
+        foreign = get_idx_foreign_flow(kode_saham)
+        if foreign:
+            if foreign["net_foreign"] > 0:
+                skor += 3
+                alasan.append(f"Asing NET BUY 🟢")
+            elif foreign["net_foreign"] < 0:
+                skor -= 2
+                peringatan.append("Asing NET SELL ⚠️")
+
+        detail = {
+            "kode":      kode_saham,
+            "price":     price,
+            "val_today": val_today,
+            "val_ratio": round(val_ratio, 2),
+            "vol_ratio": round(vol_ratio, 2),
+            "rsi":       round(rsi, 1),
+            "mfi":       round(mfi, 1),
+            "ma20":      round(ma20, 0),
+            "alasan":    alasan,
+            "peringatan":peringatan,
+            "skor":      skor,
+        }
+        return skor, detail
+
+    except Exception as e:
+        print(f"⚠️ BSJP score error ({kode_saham}): {e}")
+        return None, None
+
+
+def run_bsjp_screener(watchlist=None, top_n=8):
+    """
+    Jalankan BSJP screener pada daftar saham.
+    Returns: list of detail dicts, sorted by skor descending
+    """
+    if watchlist is None:
+        watchlist = BSJP_WATCHLIST
+
+    hasil = []
+    for kode in watchlist:
+        skor, detail = hitung_bsjp_score(kode)
+        if skor is not None and skor >= 5:   # Threshold minimum: 5 poin
+            hasil.append(detail)
+        time.sleep(0.3)  # Hindari rate limit Yahoo Finance
+
+    hasil.sort(key=lambda x: x["skor"], reverse=True)
+    return hasil[:top_n]
+
 
 if __name__ == "__main__":
     main()

@@ -7,16 +7,18 @@ import time
 import traceback
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from main import (
-    get_crypto_price, get_stock_price, 
-    get_crypto_news, get_stock_news, 
-    get_crypto_indicators, get_stock_indicators, 
+    get_crypto_price, get_stock_price,
+    get_crypto_news, get_stock_news,
+    get_crypto_indicators, get_stock_indicators,
     analisis_ai_v2, analisis_ai,
     alert_list, tambah_alert, simpan_alert,
     simpan_ke_sheets, simpan_ke_excel, catat_sinyal,
     hitung_performa, update_sinyal_closed,
     DEFAULT_MODAL,
     get_sheets_client,
-    get_fear_greed_index, get_binance_ticker, get_binance_depth
+    get_fear_greed_index, get_binance_ticker, get_binance_depth,
+    get_coingecko_market_ticker,
+    get_money_flow_analysis, run_bsjp_screener,
 )
 from user_data import UserDataManager
 
@@ -28,16 +30,29 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 user_manager = UserDataManager()
 
 # Bot metadata
-BOT_VERSION = "2.2.0"
+BOT_VERSION = "2.3.0"
 BOT_NAME = "Crypto & Saham Agent"
 
 # ==============================
 # HELPER — Kirim pesan panjang
 # ==============================
 async def kirim_pesan_panjang(update_or_message, teks):
-    """Kirim pesan panjang, dipecah per 4000 karakter"""
+    """Kirim pesan panjang, dipecah per 4000 karakter pada batas baris"""
     maks = 4000
-    bagian_list = [teks] if len(teks) <= maks else [teks[i:i+maks] for i in range(0, len(teks), maks)]
+    if len(teks) <= maks:
+        bagian_list = [teks]
+    else:
+        bagian_list = []
+        sisa = teks
+        while len(sisa) > maks:
+            # Cari newline terakhir sebelum batas 4000 karakter
+            pos = sisa.rfind('\n', 0, maks)
+            if pos == -1 or pos < maks // 2:
+                pos = maks
+            bagian_list.append(sisa[:pos])
+            sisa = sisa[pos:].lstrip('\n')
+        if sisa.strip():
+            bagian_list.append(sisa)
     
     # Tentukan target reply
     if hasattr(update_or_message, 'message') and update_or_message.message:
@@ -69,6 +84,48 @@ def retry(func, *args, max_retry=3, **kwargs):
                 raise e
             time.sleep(2)
 
+
+# ==============================
+# HELPER — Bangun baris data harga top crypto
+# Coba Binance dulu, fallback ke CoinGecko
+# ==============================
+def build_market_pulse_lines():
+    """
+    Ambil harga real-time untuk BTC, ETH, SOL.
+    Prioritas: Binance → CoinGecko fallback.
+    Returns: (list_of_lines, source_label)
+    """
+    top_coins = [("bitcoin", "₿ BTC"), ("ethereum", "Ξ ETH"), ("solana", "◎ SOL")]
+    binance_lines = []
+
+    # Coba Binance
+    for coin_id, coin_label in top_coins:
+        ticker = get_binance_ticker(coin_id)
+        depth = get_binance_depth(coin_id)
+        if ticker:
+            change_emoji = "🟢" if ticker["change_pct"] >= 0 else "🔴"
+            line = f"{coin_label}: ${ticker['price']:,.2f} {change_emoji} {ticker['change_pct']:+.2f}%"
+            if depth:
+                line += f" | Buy:{depth['buy_pressure']}% Sell:{depth['sell_pressure']}%"
+            binance_lines.append(line)
+
+    if binance_lines:
+        return binance_lines, "Binance"
+
+    # Fallback ke CoinGecko
+    print("⚠️ Binance tidak tersedia, fallback ke CoinGecko untuk market pulse...")
+    cg_data = get_coingecko_market_ticker([c[0] for c in top_coins])
+    cg_lines = []
+    for coin_id, coin_label in top_coins:
+        if coin_id in cg_data:
+            price = cg_data[coin_id].get("price", 0)
+            change = cg_data[coin_id].get("change_pct", 0)
+            if price > 0:
+                change_emoji = "🟢" if change >= 0 else "🔴"
+                cg_lines.append(f"{coin_label}: ${price:,.2f} {change_emoji} {change:+.2f}%")
+
+    return cg_lines, "CoinGecko"
+
 # ==============================
 # COMMAND /start
 # ==============================
@@ -83,6 +140,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("📋 Histori Saya", callback_data="histori")],
         [InlineKeyboardButton("📊 Performa Saya", callback_data="performa"),
          InlineKeyboardButton("🔔 Set Alert", callback_data="alert")],
+        [InlineKeyboardButton("💸 Money Flow", callback_data="moneyflow"),
+         InlineKeyboardButton("🔍 BSJP Screener", callback_data="bsjp")],
         [InlineKeyboardButton("💰 Set Modal", callback_data="set_modal"),
          InlineKeyboardButton("ℹ️ Tentang Bot", callback_data="about")],
     ]
@@ -97,7 +156,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Bot ini menganalisis crypto & saham secara gratis menggunakan:\n"
         f"• 10 Indikator Teknikal (RSI, MACD, Bollinger, dll)\n"
         f"• AI-Powered Narrative & Scoring\n"
-        f"• Smart Risk Management & Position Sizing\n\n"
+        f"• 💸 Money Flow & Bandarmology (MFI, CMF, Net Foreign)\n"
+        f"• 🔍 BSJP Screener — scan 40 saham LQ45 otomatis\n\n"
         f"📊 Sisa kuota: *{remaining} analisis/jam*\n"
         f"💡 Ketik `/analisis bitcoin` untuk mulai!\n\n"
         f"Pilih menu di bawah:",
@@ -335,31 +395,33 @@ _(10-Point Analysis System)_
 
 `/start` → Menu utama
 `/analisis [aset]` → Analisis harga & sinyal (10-Point)
-`/sentiment` → Cek sentimen pasar crypto (Fear & Greed + Binance)
+`/sentiment` → Sentimen pasar crypto (Fear & Greed)
+`/moneyflow [kode.JK]` → Analisis Money Flow & Bandarmology
+`/bsjp` → Screener Beli Sore Jual Pagi (BSJP)
+`/histori` → Riwayat analisis kamu
+`/performa [aset]` → Lihat & update performa
 `/modal [jumlah]` → Set modal trading
 `/alert [aset] [kondisi] [harga]` → Set alert harga
 `/alerts` → Lihat semua alert aktif
-`/performa [aset]` → Lihat & update performa
 `/about` → Tentang bot & developer
 `/help` → Tampilkan panduan ini
 
 📌 *Contoh penggunaan:*
 
 `/analisis bitcoin`
-`/analisis ethereum`
 `/analisis BBCA.JK`
-`/analisis AAPL`
+`/moneyflow BBRI.JK`
+`/bsjp`
 `/modal 5000000`
 `/alert bitcoin naik 70000`
 
-📊 *Fitur 10-Point System:*
-• Adaptive Learning (belajar dari histori)
-• Market Condition (Trending/Sideways/Volatile)
-• Deterministic Scoring (konsisten & terukur)
-• Copy Trading & Position Sizing
-• No-Trade Zone Detection
-• Fear & Greed Index (sentimen pasar crypto)
-• Binance Real-Time Price & Order Book
+📊 *Fitur Unggulan:*
+• 10-Point Scoring System
+• Money Flow Index (MFI) & Chaikin Money Flow (CMF)
+• Net Foreign Buy/Sell dari IDX (Bandarmology)
+• BSJP Screener — scan 40 saham LQ45 otomatis
+• Fear & Greed Index
+• Harga real-time (Binance / CoinGecko fallback)
 
 📊 *Kuota:* {user_manager.get_remaining_requests(update.effective_user.id)} analisis tersisa (reset tiap jam)
 
@@ -618,22 +680,12 @@ _Gunakan /performa [aset] untuk update sinyal tertentu_
             else:
                 fng_text = "🌡️ Fear & Greed: Data tidak tersedia\n"
 
-            top_coins = [("bitcoin", "₿ BTC"), ("ethereum", "Ξ ETH"), ("solana", "◎ SOL")]
-            binance_lines = []
-            for coin_id, coin_label in top_coins:
-                ticker = get_binance_ticker(coin_id)
-                depth = get_binance_depth(coin_id)
-                if ticker:
-                    change_emoji = "🟢" if ticker["change_pct"] >= 0 else "🔴"
-                    line = f"{coin_label}: ${ticker['price']:,.2f} {change_emoji} {ticker['change_pct']:+.2f}%"
-                    if depth:
-                        line += f" | Buy:{depth['buy_pressure']}% Sell:{depth['sell_pressure']}%"
-                    binance_lines.append(line)
-
-            if binance_lines:
-                binance_text = "\n📊 *Binance Real-Time*\n" + "\n".join(binance_lines) + "\n"
+            # Harga real-time (Binance atau CoinGecko fallback)
+            pulse_lines, pulse_source = build_market_pulse_lines()
+            if pulse_lines:
+                binance_text = f"\n📊 *Harga Real-Time ({pulse_source})*\n" + "\n".join(pulse_lines) + "\n"
             else:
-                binance_text = "\n📊 Binance: Data tidak tersedia\n"
+                binance_text = "\n📊 Data harga tidak tersedia\n"
 
             teks = (
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -642,7 +694,7 @@ _Gunakan /performa [aset] untuk update sinyal tertentu_
                 f"{fng_text}\n"
                 f"{binance_text}\n"
                 f"💡 Gunakan `/analisis bitcoin` untuk analisis lengkap!\n\n"
-                f"_Data dari alternative.me & Binance (gratis, real-time)_"
+                f"_Data dari alternative.me & {pulse_source} (gratis, real-time)_"
             )
             await query.message.reply_text(teks, parse_mode="Markdown")
         except Exception as e:
@@ -696,18 +748,32 @@ _Gunakan /performa [aset] untuk update sinyal tertentu_
             data_rows = all_values[1:]
             uid_str = str(user_id)
 
-            # Safe column lookup — gunakan dict agar tidak crash jika header berbeda
-            col_map = {h: i for i, h in enumerate(headers)}
-            uid_col = col_map.get("User ID", -1)
-            tanggal_col = col_map.get("Tanggal & Waktu", col_map.get("Tanggal", 0))
-            jenis_col = col_map.get("Jenis", -1)
-            aset_col = col_map.get("Nama Aset", col_map.get("Aset", -1))
-            sinyal_col = col_map.get("Sinyal AI", col_map.get("Sinyal", -1))
+            # Smart header detection: cek apakah baris pertama adalah header atau data
+            # Jika tidak ada keyword header, anggap semua baris adalah data (tanpa header)
+            HEADER_KEYWORDS = {"User ID", "Tanggal & Waktu", "Tanggal", "Nama Aset", "Sinyal AI"}
+            has_header = any(kw in headers for kw in HEADER_KEYWORDS)
+            if not has_header:
+                # Tidak ada header row — gunakan posisi default sesuai skema simpan_ke_sheets
+                # Schema: [Tanggal & Waktu(0), User ID(1), Jenis(2), Nama Aset(3),
+                #          Harga(4), RSI(5), MACD(6), Sinyal AI(7), Analisis(8)]
+                data_rows = all_values  # Semua row adalah data
+                uid_col = 1
+                tanggal_col = 0
+                jenis_col = 2
+                aset_col = 3
+                sinyal_col = 7
+            else:
+                col_map = {h: i for i, h in enumerate(headers)}
+                uid_col = col_map.get("User ID", 1)
+                tanggal_col = col_map.get("Tanggal & Waktu", col_map.get("Tanggal", 0))
+                jenis_col = col_map.get("Jenis", 2)
+                aset_col = col_map.get("Nama Aset", col_map.get("Aset", 3))
+                sinyal_col = col_map.get("Sinyal AI", col_map.get("Sinyal", 7))
 
             # Filter rows milik user ini
             user_rows = []
             for row in data_rows:
-                if uid_col >= 0 and uid_col < len(row) and row[uid_col] == uid_str:
+                if uid_col < len(row) and row[uid_col] == uid_str:
                     user_rows.append(row)
 
             if not user_rows:
@@ -722,10 +788,10 @@ _Gunakan /performa [aset] untuk update sinyal tertentu_
             teks = f"📋 *Histori Analisis Kamu* (terakhir {len(recent)} dari {len(user_rows)} total)\n\n"
 
             for idx, row in enumerate(reversed(recent), 1):
-                tanggal = row[tanggal_col] if tanggal_col >= 0 and tanggal_col < len(row) else "-"
-                jenis_val = row[jenis_col] if jenis_col >= 0 and jenis_col < len(row) else "-"
-                aset = row[aset_col] if aset_col >= 0 and aset_col < len(row) else "-"
-                sinyal = row[sinyal_col] if sinyal_col >= 0 and sinyal_col < len(row) else "-"
+                tanggal = row[tanggal_col] if tanggal_col < len(row) else "-"
+                jenis_val = row[jenis_col] if jenis_col < len(row) else "-"
+                aset = row[aset_col] if aset_col < len(row) else "-"
+                sinyal = row[sinyal_col] if sinyal_col < len(row) else "-"
                 emoji = "📈" if jenis_val == "Crypto" else "📉"
                 teks += f"{idx}. {emoji} *{aset}* | {sinyal} | {tanggal}\n"
 
@@ -740,6 +806,30 @@ _Gunakan /performa [aset] untuk update sinyal tertentu_
                 f"Error: {type(e).__name__}\n"
                 f"Coba lagi dalam beberapa saat!"
             )
+
+    elif query.data == "moneyflow":
+        await query.message.reply_text(
+            "💸 *Money Flow Analysis*\n\n"
+            "Masukkan kode saham IDX yang ingin dianalisis:\n"
+            "`/moneyflow BBCA.JK`\n`/moneyflow BBRI.JK`\n\n"
+            "Atau pilih saham populer:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🏦 BBCA", callback_data="mf_BBCA.JK"),
+                 InlineKeyboardButton("🏦 BBRI", callback_data="mf_BBRI.JK")],
+                [InlineKeyboardButton("🏦 BMRI", callback_data="mf_BMRI.JK"),
+                 InlineKeyboardButton("📡 TLKM", callback_data="mf_TLKM.JK")],
+                [InlineKeyboardButton("🚗 ASII", callback_data="mf_ASII.JK"),
+                 InlineKeyboardButton("💰 ADRO", callback_data="mf_ADRO.JK")],
+            ])
+        )
+
+    elif query.data.startswith("mf_"):
+        kode = query.data[3:]
+        await _handle_moneyflow(query.message, kode)
+
+    elif query.data == "bsjp":
+        await _handle_bsjp_screener(query.message)
 
 # ==============================
 # COMMAND /performa
@@ -814,7 +904,7 @@ async def histori_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         all_values = ws.get_all_values()
-        if len(all_values) < 2:
+        if len(all_values) < 1:
             await update.message.reply_text(
                 "⚠️ Belum ada data histori!\n\n"
                 "💡 Coba `/analisis bitcoin` untuk memulai!",
@@ -823,21 +913,32 @@ async def histori_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         headers = all_values[0]
-        data_rows = all_values[1:]
+        uid_str = str(user_id)
 
-        # Safe column lookup — gunakan dict agar tidak crash jika header berbeda
-        col_map = {h: i for i, h in enumerate(headers)}
-        uid_col = col_map.get("User ID", -1)
-        tanggal_col = col_map.get("Tanggal & Waktu", col_map.get("Tanggal", 0))
-        jenis_col = col_map.get("Jenis", -1)
-        aset_col = col_map.get("Nama Aset", col_map.get("Aset", -1))
-        sinyal_col = col_map.get("Sinyal AI", col_map.get("Sinyal", -1))
+        # Smart header detection
+        HEADER_KEYWORDS = {"User ID", "Tanggal & Waktu", "Tanggal", "Nama Aset", "Sinyal AI"}
+        has_header = any(kw in headers for kw in HEADER_KEYWORDS)
+        if not has_header:
+            # Tidak ada header row — gunakan posisi default
+            data_rows = all_values
+            uid_col = 1
+            tanggal_col = 0
+            jenis_col = 2
+            aset_col = 3
+            sinyal_col = 7
+        else:
+            data_rows = all_values[1:]
+            col_map = {h: i for i, h in enumerate(headers)}
+            uid_col = col_map.get("User ID", 1)
+            tanggal_col = col_map.get("Tanggal & Waktu", col_map.get("Tanggal", 0))
+            jenis_col = col_map.get("Jenis", 2)
+            aset_col = col_map.get("Nama Aset", col_map.get("Aset", 3))
+            sinyal_col = col_map.get("Sinyal AI", col_map.get("Sinyal", 7))
 
         # Filter by user_id
-        uid_str = str(user_id)
         user_rows = []
         for row in data_rows:
-            if uid_col >= 0 and uid_col < len(row) and row[uid_col] == uid_str:
+            if uid_col < len(row) and row[uid_col] == uid_str:
                 user_rows.append(row)
 
         if not user_rows:
@@ -853,10 +954,10 @@ async def histori_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         teks = f"📋 *Histori Analisis Kamu* (terakhir {len(recent)} dari {len(user_rows)} total)\n\n"
 
         for idx, row in enumerate(reversed(recent), 1):
-            tanggal = row[tanggal_col] if tanggal_col >= 0 and tanggal_col < len(row) else "-"
-            jenis = row[jenis_col] if jenis_col >= 0 and jenis_col < len(row) else "-"
-            aset = row[aset_col] if aset_col >= 0 and aset_col < len(row) else "-"
-            sinyal = row[sinyal_col] if sinyal_col >= 0 and sinyal_col < len(row) else "-"
+            tanggal = row[tanggal_col] if tanggal_col < len(row) else "-"
+            jenis = row[jenis_col] if jenis_col < len(row) else "-"
+            aset = row[aset_col] if aset_col < len(row) else "-"
+            sinyal = row[sinyal_col] if sinyal_col < len(row) else "-"
             emoji = "📈" if jenis == "Crypto" else "📉"
             teks += f"{idx}. {emoji} *{aset}* | {sinyal} | {tanggal}\n"
 
@@ -874,6 +975,177 @@ async def histori_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ==============================
 # COMMAND /sentiment — Quick Market Pulse
+# ==============================
+
+# ============================================================
+# HELPER — Money Flow (dipakai dari button & command)
+# ============================================================
+async def _handle_moneyflow(message, kode_saham):
+    kode_up = kode_saham.upper()
+    if not kode_up.endswith(".JK"):
+        kode_up = kode_up + ".JK"
+
+    await message.reply_text(f"⏳ Menganalisis money flow {kode_up}...")
+
+    try:
+        mf = get_money_flow_analysis(kode_up)
+        if not mf:
+            await message.reply_text(
+                f"⚠️ Tidak bisa mengambil data untuk *{kode_up}*.\n"
+                f"Pastikan kode saham benar (contoh: `BBCA.JK`)",
+                parse_mode="Markdown"
+            )
+            return
+
+        # Format value transaksi ke miliar
+        def rp_miliar(val):
+            if val >= 1_000_000_000_000:
+                return f"Rp {val/1_000_000_000_000:.2f} T"
+            elif val >= 1_000_000_000:
+                return f"Rp {val/1_000_000_000:.1f} M"
+            else:
+                return f"Rp {val/1_000_000:.0f} Jt"
+
+        foreign = mf.get("foreign")
+        if foreign:
+            net = foreign["net_foreign"]
+            sign = "+" if net >= 0 else ""
+            foreign_text = (
+                f"\n🌍 *Net Foreign Flow (IDX)*\n"
+                f"• Buy : {rp_miliar(foreign['foreign_buy'])}\n"
+                f"• Sell: {rp_miliar(foreign['foreign_sell'])}\n"
+                f"• Net : {sign}{rp_miliar(abs(net))} → {foreign['status']}\n"
+                f"• 💡 {foreign['interpretasi']}\n"
+            )
+        else:
+            foreign_text = "\n🌍 *Net Foreign Flow:* Data tidak tersedia\n"
+
+        teks = (
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"💸 *MONEY FLOW — {kode_up}*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💰 *Value Transaksi*\n"
+            f"• Hari ini : {rp_miliar(mf['value_today'])}\n"
+            f"• Rata20hr : {rp_miliar(mf['value_avg_20d'])}\n"
+            f"• Rasio    : {mf['value_ratio']}x → {mf['value_status']}\n\n"
+            f"📊 *Indikator Volume*\n"
+            f"• MFI (14) : {mf['mfi']} → {mf['mfi_label']}\n"
+            f"• CMF (20) : {mf['cmf']:.4f} → {mf['cmf_label']}\n"
+            f"• OBV 5hr  : {mf['obv_trend']}\n"
+            f"• Vol Ratio: {mf['vol_ratio']}x {'🔥 SPIKE' if mf['vol_spike'] else '(normal)'}\n"
+            f"{foreign_text}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🧠 *KESIMPULAN (Skor: {mf['skor']})*\n"
+            f"{mf['kesimpulan']}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚠️ _Bukan nasihat keuangan. DYOR._"
+        )
+        await kirim_pesan_panjang(message, teks)
+
+    except Exception as e:
+        print(f"❌ Error moneyflow: {e}")
+        await message.reply_text(f"⚠️ Gagal analisis money flow: {type(e).__name__}")
+
+
+# ============================================================
+# HELPER — BSJP Screener (dipakai dari button & command)
+# ============================================================
+async def _handle_bsjp_screener(message):
+    await message.reply_text(
+        "⏳ *Menjalankan BSJP Screener...*\n\n"
+        "Memindai 40 saham IDX berdasarkan:\n"
+        "• Value & Volume Transaksi\n"
+        "• MFI (Money Flow Index)\n"
+        "• Pola Candle & Trend\n"
+        "• Net Foreign Flow\n\n"
+        "_Harap tunggu ~60 detik..._",
+        parse_mode="Markdown"
+    )
+    try:
+        hasil = run_bsjp_screener()
+
+        if not hasil:
+            await message.reply_text(
+                "📭 *Tidak ada saham yang lolos kriteria BSJP hari ini.*\n\n"
+                "Kemungkinan:\n"
+                "• Pasar sedang sideways/bearish\n"
+                "• Value & volume saham LQ45 sedang rendah\n\n"
+                "💡 Coba lagi mendekati sesi sore (14.00–15.30 WIB).",
+                parse_mode="Markdown"
+            )
+            return
+
+        teks = (
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "🔍 *BSJP SCREENER RESULT*\n"
+            "Beli Sore Jual Pagi — Kandidat Terbaik\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        )
+
+        for rank, d in enumerate(hasil, 1):
+            def rp_m(v):
+                if v >= 1_000_000_000_000:
+                    return f"{v/1_000_000_000_000:.1f}T"
+                return f"{v/1_000_000_000:.0f}M"
+
+            alasan_str   = " | ".join(d["alasan"][:4])
+            warning_str  = " | ".join(d["peringatan"][:2])
+
+            teks += (
+                f"#{rank} 🏅 *{d['kode']}* — Skor: {d['skor']}\n"
+                f"💵 Harga: Rp {d['price']:,.0f} | MA20: Rp {d['ma20']:,.0f}\n"
+                f"💸 Value: {rp_m(d['val_today'])} ({d['val_ratio']}x avg)\n"
+                f"📊 Vol: {d['vol_ratio']}x | RSI: {d['rsi']} | MFI: {d['mfi']}\n"
+                f"✅ {alasan_str}\n"
+            )
+            if warning_str:
+                teks += f"⚠️ {warning_str}\n"
+            teks += "\n"
+
+        teks += (
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "💡 *Cara pakai:*\n"
+            "Beli di sesi sore (14.00–15.30 WIB)\n"
+            "Target jual: Pre-market / Opening besok pagi\n"
+            "Selalu pasang Stop Loss!\n\n"
+            "⚠️ _Bukan nasihat keuangan. DYOR._"
+        )
+        await kirim_pesan_panjang(message, teks)
+
+    except Exception as e:
+        print(f"❌ Error BSJP screener: {e}")
+        await message.reply_text(f"⚠️ Gagal menjalankan screener: {type(e).__name__}")
+
+
+# ==============================
+# COMMAND /moneyflow
+# ==============================
+async def moneyflow_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "💸 *Money Flow Analysis*\n\n"
+            "Gunakan: `/moneyflow [kode_saham]`\n\n"
+            "Contoh:\n"
+            "`/moneyflow BBCA.JK`\n"
+            "`/moneyflow BBRI.JK`\n"
+            "`/moneyflow TLKM.JK`",
+            parse_mode="Markdown"
+        )
+        return
+    kode = args[0]
+    await _handle_moneyflow(update.message, kode)
+
+
+# ==============================
+# COMMAND /bsjp
+# ==============================
+async def bsjp_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _handle_bsjp_screener(update.message)
+
+
+# ==============================
+# COMMAND /sentiment
 # ==============================
 async def sentiment_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Tampilkan Fear & Greed Index + Binance data top crypto secara cepat"""
@@ -908,23 +1180,12 @@ async def sentiment_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             fng_text = "🌡️ Fear & Greed: Data tidak tersedia\n"
 
-        # Binance data untuk BTC & ETH
-        top_coins = [("bitcoin", "₿ BTC"), ("ethereum", "Ξ ETH"), ("solana", "◎ SOL")]
-        binance_lines = []
-        for coin_id, coin_label in top_coins:
-            ticker = get_binance_ticker(coin_id)
-            depth = get_binance_depth(coin_id)
-            if ticker:
-                change_emoji = "🟢" if ticker["change_pct"] >= 0 else "🔴"
-                line = f"{coin_label}: ${ticker['price']:,.2f} {change_emoji} {ticker['change_pct']:+.2f}%"
-                if depth:
-                    line += f" | Buy:{depth['buy_pressure']}% Sell:{depth['sell_pressure']}%"
-                binance_lines.append(line)
-
-        if binance_lines:
-            binance_text = "\n📊 *Binance Real-Time*\n" + "\n".join(binance_lines) + "\n"
+        # Harga real-time (Binance atau CoinGecko fallback)
+        pulse_lines, pulse_source = build_market_pulse_lines()
+        if pulse_lines:
+            binance_text = f"\n📊 *Harga Real-Time ({pulse_source})*\n" + "\n".join(pulse_lines) + "\n"
         else:
-            binance_text = "\n📊 Binance: Data tidak tersedia\n"
+            binance_text = "\n📊 Data harga tidak tersedia\n"
 
         teks = (
             f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -958,6 +1219,8 @@ def main():
     app.add_handler(CommandHandler("performa", performa_cmd))
     app.add_handler(CommandHandler("histori", histori_cmd))
     app.add_handler(CommandHandler("sentiment", sentiment_cmd))
+    app.add_handler(CommandHandler("moneyflow", moneyflow_cmd))
+    app.add_handler(CommandHandler("bsjp", bsjp_cmd))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     print(f"🤖 {BOT_NAME} v{BOT_VERSION} berjalan...")
